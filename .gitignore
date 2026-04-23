@@ -27,6 +27,11 @@ yarn-error.log*
 Thumbs.db
 
 # local agent/tooling artifacts
-.codex/
-AGENTS.md
+.codex/*
+!.codex/skills/
+.codex/skills/*
+!.codex/skills/gamedash-a2z-builder/
+!.codex/skills/gamedash-a2z-builder/**
+!.codex/skills/phase-orchestrator/
+!.codex/skills/phase-orchestrator/**
 docs/00-codex-mcp-setup.md

@@ -98,14 +98,14 @@ model RefreshToken {
 }
 
 model MatchmakingQueue {
-  id        String    @id @default(uuid())
+  id        String     @id @default(uuid())
   userId    String
   mode      GameMode
   state     QueueState @default(IN_QUEUE)
-  queuedAt  DateTime  @default(now())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  queuedAt  DateTime   @default(now())
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([mode, state, queuedAt])
 }
@@ -135,14 +135,14 @@ model MatchParticipant {
 }
 
 model PlayerMmr {
-  id         String    @id @default(uuid())
-  userId     String
-  mode       GameMode
-  mmr        Int       @default(1000)
-  rankTier   String    @default("BRONZE")
-  rankDiv    String    @default("III")
-  updatedAt  DateTime  @updatedAt
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid())
+  userId    String
+  mode      GameMode
+  mmr       Int      @default(1000)
+  rankTier  String   @default("BRONZE")
+  rankDiv   String   @default("III")
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, mode])
 }
@@ -183,109 +183,109 @@ model Transaction {
 }
 
 model InventoryItem {
-  id          String   @id @default(uuid())
-  userId      String
-  itemCode    String
-  equipped    Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid())
+  userId    String
+  itemCode  String
+  equipped  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, itemCode])
 }
 
 model GameMap {
-  id               String               @id @default(uuid())
-  creatorId        String
-  title            String
-  description      String
-  tags             String[]
-  status           MapStatus            @default(DRAFT)
-  popularityScore  Float                @default(0)
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-  creator          User                 @relation(fields: [creatorId], references: [id], onDelete: Cascade)
-  versions         MapVersion[]
-  votes            MapVote[]
-  tests            MapTest[]
-  favorites        MapFavorite[]
+  id              String               @id @default(uuid())
+  creatorId       String
+  title           String
+  description     String
+  tags            String[]
+  status          MapStatus            @default(DRAFT)
+  popularityScore Float                @default(0)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  creator         User                 @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  versions        MapVersion[]
+  votes           MapVote[]
+  tests           MapTest[]
+  favorites       MapFavorite[]
   moderationEvents MapModerationEvent[]
 }
 
 model MapVersion {
   id           String   @id @default(uuid())
-  mapId         String
-  versionLabel  String
-  releaseNotes  String
-  createdAt     DateTime @default(now())
-  map           GameMap  @relation(fields: [mapId], references: [id], onDelete: Cascade)
+  mapId        String
+  versionLabel String
+  releaseNotes String
+  createdAt    DateTime @default(now())
+  map          GameMap  @relation(fields: [mapId], references: [id], onDelete: Cascade)
 
   @@unique([mapId, versionLabel])
 }
 
 model MapVote {
-  id         String   @id @default(uuid())
-  mapId      String
-  userId     String
-  value      Int
-  createdAt  DateTime @default(now())
-  map        GameMap  @relation(fields: [mapId], references: [id], onDelete: Cascade)
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid())
+  mapId     String
+  userId    String
+  value     Int
+  createdAt DateTime @default(now())
+  map       GameMap  @relation(fields: [mapId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([mapId, userId])
 }
 
 model MapTest {
-  id         String   @id @default(uuid())
-  mapId      String
-  userId     String
-  completed  Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  map        GameMap  @relation(fields: [mapId], references: [id], onDelete: Cascade)
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid())
+  mapId     String
+  userId    String
+  completed Boolean  @default(true)
+  createdAt DateTime @default(now())
+  map       GameMap  @relation(fields: [mapId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model MapFavorite {
-  id         String   @id @default(uuid())
-  mapId      String
-  userId     String
-  createdAt  DateTime @default(now())
-  map        GameMap  @relation(fields: [mapId], references: [id], onDelete: Cascade)
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid())
+  mapId     String
+  userId    String
+  createdAt DateTime @default(now())
+  map       GameMap  @relation(fields: [mapId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([mapId, userId])
 }
 
 model MapModerationEvent {
-  id          String   @id @default(uuid())
-  mapId        String
-  actorId      String
-  action       String
-  reason       String?
-  createdAt    DateTime @default(now())
-  map          GameMap  @relation(fields: [mapId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid())
+  mapId     String
+  actorId   String
+  action    String
+  reason    String?
+  createdAt DateTime @default(now())
+  map       GameMap  @relation(fields: [mapId], references: [id], onDelete: Cascade)
 }
 
 model Sanction {
-  id         String       @id @default(uuid())
-  userId     String
-  type       SanctionType
-  reason     String
-  startedAt  DateTime     @default(now())
-  endsAt     DateTime?
-  createdAt  DateTime     @default(now())
-  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String       @id @default(uuid())
+  userId    String
+  type      SanctionType
+  reason    String
+  startedAt DateTime     @default(now())
+  endsAt    DateTime?
+  createdAt DateTime     @default(now())
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model AuditLog {
-  id          String   @id @default(uuid())
-  actorId     String
-  action      String
-  targetType  String
-  targetId    String?
-  metadata    Json?
-  createdAt   DateTime @default(now())
-  actor       User     @relation(fields: [actorId], references: [id], onDelete: Cascade)
+  id         String   @id @default(uuid())
+  actorId    String
+  action     String
+  targetType String
+  targetId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  actor      User     @relation(fields: [actorId], references: [id], onDelete: Cascade)
 
   @@index([action, createdAt])
 }

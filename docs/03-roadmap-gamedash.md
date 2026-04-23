@@ -3,11 +3,15 @@
 ## Vision de delivery
 Livrer un MVP jouable et administrable en 8 phases, avec validation continue.
 
+## Execution companion docs
+- This roadmap is the source of truth for phase scope and ordering.
+- Execution protocol for `/phaseN` prompts: `docs/phase-protocol.md`
+- Pass/fail gates used to unlock later phases: `docs/phase-gates.md`
+
 ## Phase 0 - Cadrage et socle (Semaine 1)
 - Clarifier les user stories MVP.
 - Fixer architecture cible et conventions.
 - Initialiser repo, CI, qualite (lint/tests), templates docs.
-- Installer configuration Codex/MCP et skill projet.
 
 **Sortie attendue**
 - Base projet executable.
@@ -93,8 +97,7 @@ Livrer un MVP jouable et administrable en 8 phases, avec validation continue.
 ## Repartition proposee (alignement cahier des charges)
 - Etudiant 1: Backend Auth + Matchmaking/MMR.
 - Etudiant 2: Frontend Joueur + UX mobile first.
-- Etudiant 3: Backoffice + dataviz.
-- Etudiant 4 (optionnel): UGC maps + moderation maps.
+
 
 ## Jalons de controle (Go/No-Go)
 - J1 (fin Phase 2): boucle competitive fonctionnelle.

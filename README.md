@@ -1,7 +1,6 @@
 # GameDash
 
 GameDash is a unified platform for a competitive online game with community map content.
-This repository is prepared as a coding-ready monorepo for Codex execution.
 
 ## Product goal
 - Player surface: account, progression, matchmaking, economy, maps.
@@ -27,25 +26,24 @@ Phase 0: project foundation and executable governance.
 - `contracts`: OpenAPI contracts
 - `prisma`: DB schema baseline
 - `docs`: product, security, risk, backlog, events, setup
-- `.codex`: project Codex skill and project config
 
 ## Main commands
 ```bash
-pnpm.cmd install
-pnpm.cmd dev
-pnpm.cmd build
-pnpm.cmd lint
-pnpm.cmd typecheck
-pnpm.cmd test
-pnpm.cmd validate:openapi
-pnpm.cmd validate:prisma
-pnpm.cmd validate:contracts
+corepack pnpm install
+corepack pnpm dev
+corepack pnpm build
+corepack pnpm lint
+corepack pnpm typecheck
+corepack pnpm test
+corepack pnpm validate:openapi
+corepack pnpm validate:prisma
+corepack pnpm validate:contracts
 ```
 
 ## Local run (minimal)
 1. Copy `.env.example` values where needed.
-2. Start API: `pnpm.cmd --filter @gamedash/api dev`
-3. Start Web: `pnpm.cmd --filter @gamedash/web dev`
+2. Start API: `corepack pnpm --filter @gamedash/api dev`
+3. Start Web: `corepack pnpm --filter @gamedash/web dev`
 4. Health check: `GET http://localhost:3001/api/v1/health`
 
 ## Governance entrypoints
@@ -54,3 +52,5 @@ pnpm.cmd validate:contracts
 - Executable backlog: `docs/backlog-mvp.md`
 - Security baseline: `docs/security-baseline.md`
 - Decision log: `docs/decision-log.md`
+- Phase protocol: `docs/phase-protocol.md`
+- Phase gates: `docs/phase-gates.md`

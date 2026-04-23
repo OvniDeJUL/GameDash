@@ -4,7 +4,7 @@ This project intentionally uses native local installs (no Docker) for now.
 
 ## 1. Requirements
 - Node.js >= 20
-- pnpm (use `pnpm.cmd` on PowerShell if script policy blocks `.ps1`)
+- pnpm via Corepack (`corepack pnpm`) or a local pnpm install
 - PostgreSQL (local service)
 - Redis (local service)
 
@@ -32,17 +32,17 @@ Expected output: `PONG`
 
 ## 5. Install and validate project
 ```bash
-pnpm.cmd install
-pnpm.cmd validate:openapi
-pnpm.cmd validate:prisma
-pnpm.cmd lint
-pnpm.cmd typecheck
+corepack pnpm install
+corepack pnpm validate:openapi
+corepack pnpm validate:prisma
+corepack pnpm lint
+corepack pnpm typecheck
 ```
 
 ## 6. Run apps
 ```bash
-pnpm.cmd --filter @gamedash/api dev
-pnpm.cmd --filter @gamedash/web dev
+corepack pnpm --filter @gamedash/api dev
+corepack pnpm --filter @gamedash/web dev
 ```
 
 API health:
