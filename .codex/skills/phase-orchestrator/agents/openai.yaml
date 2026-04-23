@@ -1,4 +1,0 @@
-interface:
-  display_name: "Phase Orchestrator"
-  short_description: "Execute une phase roadmap avec gates, validations et push."
-  default_prompt: "Use $phase-orchestrator to execute the requested GameDash roadmap phase from a `/phaseN` prompt with prerequisite checks, validations, commits, and push to `main`."

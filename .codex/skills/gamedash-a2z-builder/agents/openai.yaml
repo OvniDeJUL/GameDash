@@ -1,4 +1,0 @@
-interface:
-  display_name: "GameDash A2Z Builder"
-  short_description: "Pilotage complet de la delivery GameDash."
-  default_prompt: "Use $gamedash-a2z-builder to deliver the next roadmap milestone end-to-end with implementation, tests, and docs."

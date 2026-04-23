@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Define how Codex must interpret prompts such as `/phase1`, `/phase 3`, or `/phase 7`.
+Define how the repository workflow must interpret prompts such as `/phase1`, `/phase 3`, or `/phase 7`.
 
-This is a prompt convention for Codex sessions that load this repository. It is not a native shell command.
+This is a prompt convention for sessions that load this repository. It is not a native shell command.
 
 ## Source of truth
 
@@ -54,7 +54,7 @@ Example:
 
 ## Scope correction rule
 
-Once prerequisite phases pass, Codex may fix older defects outside the nominal target phase if they block:
+Once prerequisite phases pass, the agent may fix older defects outside the nominal target phase if they block:
 
 - implementation of the requested phase
 - repository integrity
@@ -82,7 +82,7 @@ Use the package-manager entrypoints defined by the repository when available.
 - Start with `git pull --rebase`.
 - End with `git push` to `main`.
 - Use neutral Conventional Commit messages.
-- Do not mention automation, Codex, or generated-work wording in commit messages unless the user explicitly asks for it.
+- Do not mention automation or generated-work wording in commit messages unless the user explicitly asks for it.
 
 ## Report formats
 

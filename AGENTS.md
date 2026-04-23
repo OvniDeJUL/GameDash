@@ -27,7 +27,6 @@ API + schema + shared contracts + minimal UI + tests + docs.
 
 ## Phase prompt convention
 - Treat prompts such as `/phase0`, `/phase1`, `/phase 2`, `/phase3` as repository-supported execution commands.
-- Use skill: `$phase-orchestrator`.
 - Read:
   - `docs/03-roadmap-gamedash.md`
   - `docs/phase-protocol.md`
@@ -44,7 +43,7 @@ API + schema + shared contracts + minimal UI + tests + docs.
   - `validate:prisma`
 - If a validation fails during execution of the requested phase, fix it and rerun until the suite is green or a hard blocker is reached.
 - If `git push` is rejected because the remote moved, run `git pull --rebase`, rerun the full validation suite, then retry the push.
-- Use neutral Conventional Commit messages. Do not mention automation or Codex in commit messages unless explicitly requested by the user.
+- Use neutral Conventional Commit messages. Do not mention automation in commit messages unless explicitly requested by the user.
 
 ## Commit style
 - Conventional Commits.
@@ -60,8 +59,6 @@ API + schema + shared contracts + minimal UI + tests + docs.
 4. Remaining gaps vs scope.
 
 ## Start points
-- Use skill: `$gamedash-a2z-builder`
-- Use skill: `$phase-orchestrator` when the user sends `/phaseN`
 - Read first:
   - `docs/mvp-scope.md`
   - `docs/backlog-mvp.md`
