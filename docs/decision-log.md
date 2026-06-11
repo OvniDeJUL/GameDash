@@ -24,3 +24,7 @@
 - XP is awarded from accepted match results using mode base XP plus outcome bonus XP: ranked 120, unranked 90, fun 60, win 60, draw 40, loss 25.
 - Account levels use cumulative XP thresholds; level-up rewards are granted once per player and reward code.
 - Quests remain out of scope for Phase 3 and are documented as optional future scope.
+- Phase 4 economy runtime uses in-memory wallets, store catalog, inventory, append-only transaction journal, and purchase audit entries until Prisma repositories are wired in a later persistence pass.
+- MVP wallets are seeded with sandbox balances: 1000 soft currency and 20 hard currency.
+- Payment is simulated by debiting the in-app wallet only; no real payment processor or external payment credential is required.
+- Rejected purchases are journaled for auditability and do not mutate wallet or inventory state.

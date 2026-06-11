@@ -4,6 +4,7 @@ import { AdminController } from "./admin/admin.controller";
 import { AuthController } from "./auth/auth.controller";
 import { AuthService } from "./auth/auth.service";
 import { EconomyController } from "./economy/economy.controller";
+import { EconomyService } from "./economy/economy.service";
 import { HealthController } from "./health/health.controller";
 import { MapsController } from "./maps/maps.controller";
 import { MatchmakingController } from "./matchmaking/matchmaking.controller";
@@ -34,6 +35,7 @@ import { RolesGuard } from "./auth/roles.guard";
     AuthService,
     MatchmakingService,
     ProgressionService,
+    EconomyService,
     AuthGuard,
     RolesGuard,
     MatchmakingGateway,

@@ -23,6 +23,7 @@
 - Wallet read.
 - Purchase transaction baseline.
 - Inventory baseline in data model.
+- Transaction journal and simulated wallet debit flow.
 
 ### UGC maps loop
 - Create map.
@@ -67,6 +68,8 @@
 ### Economy
 - Store, wallet, and purchase route contracts exist.
 - Currency and transaction enums are defined in Prisma.
+- Phase 4 baseline includes soft and hard currency balances, queryable store catalog, wallet-backed purchase flow, inventory grants, transaction journal, and purchase audit entries.
+- Payment behavior is simulated: purchases debit the in-app wallet only; no external processor is called in the MVP baseline.
 
 ### Maps/UGC
 - All map baseline routes exist with typed payload contracts.

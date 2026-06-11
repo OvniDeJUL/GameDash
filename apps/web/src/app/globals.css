@@ -115,7 +115,9 @@ input {
 
 .rating-list,
 .history-list,
-.reward-list {
+.reward-list,
+.store-list,
+.inventory-list {
   display: grid;
   gap: 0.75rem;
   list-style: none;
@@ -123,7 +125,9 @@ input {
 
 .rating-list li,
 .history-list li,
-.reward-list li {
+.reward-list li,
+.store-list li,
+.inventory-list li {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
@@ -134,20 +138,26 @@ input {
 
 .rating-list span,
 .history-list span,
-.reward-list span {
+.reward-list span,
+.store-list span,
+.inventory-list span {
   color: #475569;
   text-transform: capitalize;
 }
 
 .rating-list strong,
 .history-list strong,
-.reward-list strong {
+.reward-list strong,
+.store-list strong,
+.inventory-list strong {
   color: #0f172a;
 }
 
 .rating-list em,
 .history-list em,
-.reward-list em {
+.reward-list em,
+.store-list em,
+.inventory-list em {
   color: #64748b;
   font-style: normal;
 }
@@ -183,6 +193,26 @@ input {
   height: 100%;
 }
 
+.wallet-card p {
+  color: #475569;
+}
+
+.wallet-balance {
+  align-items: baseline;
+  border-bottom: 1px solid #d8dee9;
+  display: flex;
+  justify-content: space-between;
+  padding: 0.75rem 0;
+}
+
+.wallet-balance span {
+  color: #475569;
+}
+
+.wallet-balance strong {
+  font-size: 1.5rem;
+}
+
 @media (max-width: 720px) {
   .auth-grid,
   .competition-grid {
@@ -196,7 +226,9 @@ input {
 
   .rating-list li,
   .history-list li,
-  .reward-list li {
+  .reward-list li,
+  .store-list li,
+  .inventory-list li {
     grid-template-columns: 1fr;
   }
 }

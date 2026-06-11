@@ -2,6 +2,8 @@ export type Role = "player" | "staff" | "admin";
 export type GameMode = "ranked" | "unranked" | "fun";
 export type MapStatus = "draft" | "beta" | "stable" | "hidden";
 export type RewardType = "soft_currency" | "cosmetic" | "title";
+export type CurrencyType = "soft" | "hard";
+export type TransactionStatus = "accepted" | "rejected";
 
 export interface HealthResponse {
   status: "ok" | "degraded";
@@ -176,14 +178,20 @@ export interface PlayerProgressionResponse {
 
 export interface StoreItem {
   id: string;
+  itemCode: string;
   name: string;
-  currencyType: "soft" | "hard";
+  description?: string;
+  currencyType: CurrencyType;
   price: number;
+  active: boolean;
+  sortOrder: number;
 }
 
 export interface WalletResponse {
+  playerId: string;
   softBalance: number;
   hardBalance: number;
+  updatedAt: string;
 }
 
 export interface PurchaseRequest {
@@ -193,7 +201,33 @@ export interface PurchaseRequest {
 
 export interface TransactionResponse {
   transactionId: string;
-  status: "accepted" | "rejected";
+  status: TransactionStatus;
+  storeItemId?: string;
+  itemCode?: string;
+  currencyType: CurrencyType;
+  unitPrice: number;
+  quantity: number;
+  amount: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  reason?: string;
+  createdAt: string;
+}
+
+export interface InventoryItemResponse {
+  id: string;
+  playerId: string;
+  itemCode: string;
+  name: string;
+  quantity: number;
+  equipped: boolean;
+  updatedAt: string;
+}
+
+export interface PurchaseResponse {
+  transaction: TransactionResponse;
+  wallet: WalletResponse;
+  inventoryItem?: InventoryItemResponse;
 }
 
 export interface CreateMapRequest {

@@ -1,36 +1,47 @@
 import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
 import type {
+  InventoryItemResponse,
   PurchaseRequest,
+  PurchaseResponse,
   StoreItem,
   TransactionResponse,
   WalletResponse
 } from "@gamedash/contracts";
 import { AuthGuard } from "../auth/auth.guard";
+import { CurrentUser } from "../auth/current-user.decorator";
+import type { AuthenticatedUser } from "../auth/auth.types";
+import { EconomyService } from "./economy.service";
 
 @Controller("economy")
 @UseGuards(AuthGuard)
 export class EconomyController {
+  constructor(private readonly economyService: EconomyService) {}
+
   @Get("store/items")
   getStoreItems(): StoreItem[] {
-    return [
-      { id: "item-soft-1", name: "Starter Skin", currencyType: "soft", price: 200 },
-      { id: "item-hard-1", name: "Premium Skin", currencyType: "hard", price: 5 }
-    ];
+    return this.economyService.listStoreItems();
   }
 
   @Get("wallet")
-  getWallet(): WalletResponse {
-    return {
-      softBalance: 1000,
-      hardBalance: 20
-    };
+  getWallet(@CurrentUser() user: AuthenticatedUser): WalletResponse {
+    return this.economyService.getWallet(user);
+  }
+
+  @Get("inventory")
+  getInventory(@CurrentUser() user: AuthenticatedUser): InventoryItemResponse[] {
+    return this.economyService.getInventory(user);
+  }
+
+  @Get("transactions")
+  getTransactions(@CurrentUser() user: AuthenticatedUser): TransactionResponse[] {
+    return this.economyService.getTransactions(user);
   }
 
   @Post("transactions/purchase")
-  purchase(@Body() body: PurchaseRequest): TransactionResponse {
-    return {
-      transactionId: `txn-${body.storeItemId}-${Date.now()}`,
-      status: "accepted"
-    };
+  purchase(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: PurchaseRequest
+  ): PurchaseResponse {
+    return this.economyService.purchase(user, body);
   }
 }

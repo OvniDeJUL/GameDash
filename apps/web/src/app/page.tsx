@@ -1,9 +1,13 @@
 import type {
   AuthTokensResponse,
+  InventoryItemResponse,
   LevelReward,
   MatchHistoryItem,
   PlayerMmrResponse,
   PlayerProgressionResponse,
+  StoreItem,
+  TransactionResponse,
+  WalletResponse,
   QueueStatusResponse,
   RankConfig,
   RegisterRequest
@@ -117,6 +121,62 @@ const levelRewards: LevelReward[] = [
     quantity: 250
   }
 ];
+
+const wallet: WalletResponse = {
+  playerId: "usr_demo",
+  softBalance: 600,
+  hardBalance: 20,
+  updatedAt: "2026-06-11T11:00:00.000Z"
+};
+
+const storeItems: StoreItem[] = [
+  {
+    id: "item_starter_skin",
+    itemCode: "skin_starter",
+    name: "Starter Skin",
+    description: "Baseline character skin purchasable with soft currency.",
+    currencyType: "soft",
+    price: 200,
+    active: true,
+    sortOrder: 10
+  },
+  {
+    id: "item_premium_skin",
+    itemCode: "skin_premium",
+    name: "Premium Skin",
+    description: "Sandbox premium cosmetic purchasable with hard currency.",
+    currencyType: "hard",
+    price: 5,
+    active: true,
+    sortOrder: 30
+  }
+];
+
+const inventory: InventoryItemResponse[] = [
+  {
+    id: "14bb9e5e-e3a6-4ee5-bb09-992018f5e9d5",
+    playerId: "usr_demo",
+    itemCode: "skin_starter",
+    name: "Starter Skin",
+    quantity: 2,
+    equipped: false,
+    updatedAt: wallet.updatedAt
+  }
+];
+
+const latestTransaction: TransactionResponse = {
+  transactionId: "abf2c698-9e1f-4c05-b9e7-94f75e2e74c2",
+  status: "accepted",
+  storeItemId: "item_starter_skin",
+  itemCode: "skin_starter",
+  currencyType: "soft",
+  unitPrice: 200,
+  quantity: 2,
+  amount: 400,
+  balanceBefore: 1000,
+  balanceAfter: 600,
+  createdAt: wallet.updatedAt
+};
 
 export default function HomePage() {
   return (
@@ -278,6 +338,71 @@ export default function HomePage() {
               );
             })}
           </ul>
+        </section>
+      </section>
+
+      <section className="competition-grid" aria-label="Economy baseline">
+        <section className="panel wallet-card">
+          <h2>Wallet</h2>
+          <div className="wallet-balance">
+            <span>Soft</span>
+            <strong>{wallet.softBalance}</strong>
+          </div>
+          <div className="wallet-balance">
+            <span>Hard</span>
+            <strong>{wallet.hardBalance}</strong>
+          </div>
+          <p>Latest purchase: {latestTransaction.status}</p>
+        </section>
+
+        <section className="panel">
+          <h2>Store</h2>
+          <ul className="store-list">
+            {storeItems.map((item) => (
+              <li key={item.id}>
+                <span>{item.currencyType}</span>
+                <strong>{item.name}</strong>
+                <em>{item.price}</em>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </section>
+
+      <section className="competition-grid" aria-label="Inventory and transaction journal">
+        <section className="panel">
+          <h2>Inventory</h2>
+          <ul className="inventory-list">
+            {inventory.map((item) => (
+              <li key={item.id}>
+                <span>{item.itemCode}</span>
+                <strong>{item.name}</strong>
+                <em>x{item.quantity}</em>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="panel">
+          <h2>Transaction journal</h2>
+          <dl>
+            <div>
+              <dt>Status</dt>
+              <dd>{latestTransaction.status}</dd>
+            </div>
+            <div>
+              <dt>Amount</dt>
+              <dd>
+                {latestTransaction.amount} {latestTransaction.currencyType}
+              </dd>
+            </div>
+            <div>
+              <dt>Balance</dt>
+              <dd>
+                {latestTransaction.balanceBefore} to {latestTransaction.balanceAfter}
+              </dd>
+            </div>
+          </dl>
         </section>
       </section>
     </main>

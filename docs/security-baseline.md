@@ -36,6 +36,13 @@ Phase 3 runtime requirement:
 - XP audit metadata must include match id, mode, outcome, awarded XP, previous level, next level, previous lifetime XP, next lifetime XP, and granted reward codes.
 - Level-up rewards must be granted at most once per player and reward code.
 
+Phase 4 runtime requirement:
+- Purchase requests must create an append-only transaction entry for accepted and rejected outcomes.
+- Accepted purchases must debit exactly one wallet currency, grant or increment exactly one inventory item, and write a purchase audit entry.
+- Rejected purchases must not mutate wallet balances or inventory quantities.
+- Purchase audit metadata must include store item id, item code, currency, quantity, amount, previous balance, next balance, and rejection reason when applicable.
+- Payment behavior is simulated for MVP and must not call or require real payment credentials.
+
 ## Secret and environment handling
 - Never commit real secrets.
 - Use `.env.example` as contract only.

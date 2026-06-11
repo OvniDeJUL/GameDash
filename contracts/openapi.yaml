@@ -367,6 +367,38 @@ paths:
                 $ref: "#/components/schemas/WalletResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /economy/inventory:
+    get:
+      operationId: getInventory
+      tags: [Economy]
+      summary: Get player inventory
+      responses:
+        "200":
+          description: Inventory items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InventoryItemResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /economy/transactions:
+    get:
+      operationId: listEconomyTransactions
+      tags: [Economy]
+      summary: List player economy transaction journal
+      responses:
+        "200":
+          description: Economy transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TransactionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /economy/transactions/purchase:
     post:
       operationId: purchaseStoreItem
@@ -384,7 +416,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TransactionResponse"
+                $ref: "#/components/schemas/PurchaseResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
   /maps:
@@ -921,49 +953,132 @@ components:
           format: date-time
     StoreItem:
       type: object
-      required: [id, name, currencyType, price]
+      required: [id, itemCode, name, currencyType, price, active, sortOrder]
       properties:
         id:
           type: string
-          format: uuid
+        itemCode:
+          type: string
         name:
           type: string
-        currencyType:
+        description:
           type: string
-          enum: [soft, hard]
+        currencyType:
+          $ref: "#/components/schemas/CurrencyType"
         price:
           type: integer
           minimum: 0
+        active:
+          type: boolean
+        sortOrder:
+          type: integer
+    CurrencyType:
+      type: string
+      enum: [soft, hard]
     WalletResponse:
       type: object
-      required: [softBalance, hardBalance]
+      required: [playerId, softBalance, hardBalance, updatedAt]
       properties:
+        playerId:
+          type: string
         softBalance:
           type: integer
           minimum: 0
         hardBalance:
           type: integer
           minimum: 0
+        updatedAt:
+          type: string
+          format: date-time
     PurchaseRequest:
       type: object
       required: [storeItemId, quantity]
       properties:
         storeItemId:
           type: string
-          format: uuid
         quantity:
           type: integer
           minimum: 1
+    TransactionStatus:
+      type: string
+      enum: [accepted, rejected]
     TransactionResponse:
       type: object
-      required: [transactionId, status]
+      required:
+        [
+          transactionId,
+          status,
+          currencyType,
+          unitPrice,
+          quantity,
+          amount,
+          balanceBefore,
+          balanceAfter,
+          createdAt
+        ]
       properties:
         transactionId:
           type: string
           format: uuid
         status:
+          $ref: "#/components/schemas/TransactionStatus"
+        storeItemId:
           type: string
-          enum: [accepted, rejected]
+        itemCode:
+          type: string
+        currencyType:
+          $ref: "#/components/schemas/CurrencyType"
+        unitPrice:
+          type: integer
+          minimum: 0
+        quantity:
+          type: integer
+          minimum: 1
+        amount:
+          type: integer
+          minimum: 0
+        balanceBefore:
+          type: integer
+          minimum: 0
+        balanceAfter:
+          type: integer
+          minimum: 0
+        reason:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    InventoryItemResponse:
+      type: object
+      required: [id, playerId, itemCode, name, quantity, equipped, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        playerId:
+          type: string
+        itemCode:
+          type: string
+        name:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+        equipped:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+    PurchaseResponse:
+      type: object
+      required: [transaction, wallet]
+      properties:
+        transaction:
+          $ref: "#/components/schemas/TransactionResponse"
+        wallet:
+          $ref: "#/components/schemas/WalletResponse"
+        inventoryItem:
+          $ref: "#/components/schemas/InventoryItemResponse"
     CreateMapRequest:
       type: object
       required: [title, description, status]

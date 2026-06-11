@@ -37,6 +37,11 @@ enum CurrencyType {
   HARD
 }
 
+enum TransactionStatus {
+  ACCEPTED
+  REJECTED
+}
+
 enum RewardType {
   SOFT_CURRENCY
   COSMETIC
@@ -226,38 +231,55 @@ model Wallet {
 
 model StoreItem {
   id           String       @id @default(uuid())
+  itemCode     String       @unique
   name         String
   description  String?
   currencyType CurrencyType
   price        Int
   active       Boolean      @default(true)
+  sortOrder    Int          @default(0)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
   transactions Transaction[]
+
+  @@index([active, sortOrder])
 }
 
 model Transaction {
-  id           String       @id @default(uuid())
-  userId       String
-  storeItemId  String?
-  currencyType CurrencyType
-  amount       Int
-  status       String       @default("accepted")
-  metadata     Json?
-  createdAt    DateTime     @default(now())
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  storeItem    StoreItem?   @relation(fields: [storeItemId], references: [id], onDelete: SetNull)
+  id            String            @id @default(uuid())
+  userId        String
+  storeItemId   String?
+  itemCode      String?
+  currencyType  CurrencyType
+  unitPrice     Int
+  quantity      Int
+  amount        Int
+  balanceBefore Int
+  balanceAfter  Int
+  status        TransactionStatus @default(ACCEPTED)
+  reason        String?
+  metadata      Json?
+  createdAt     DateTime          @default(now())
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storeItem     StoreItem?        @relation(fields: [storeItemId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
 }
 
 model InventoryItem {
-  id        String   @id @default(uuid())
-  userId    String
-  itemCode  String
-  equipped  Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                  String   @id @default(uuid())
+  userId              String
+  itemCode            String
+  name                String
+  quantity            Int      @default(1)
+  equipped            Boolean  @default(false)
+  sourceTransactionId String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, itemCode])
   @@index([userId, itemCode])
 }
 

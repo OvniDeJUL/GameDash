@@ -23,7 +23,7 @@ Status: done
 - Contracts: progression, XP rules, level reward DTOs.
 
 ## Slice 4 - Economy baseline
-Status: ready
+Status: done
 - API: store items, wallet, purchase transaction.
 - Schema: wallet, store item, transaction, inventory item.
 - Contracts: wallet/store/purchase DTOs.
