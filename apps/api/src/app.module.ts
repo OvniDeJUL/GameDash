@@ -10,6 +10,7 @@ import { MatchmakingController } from "./matchmaking/matchmaking.controller";
 import { MatchmakingService } from "./matchmaking/matchmaking.service";
 import { MatchesController } from "./matches/matches.controller";
 import { PlayersController } from "./players/players.controller";
+import { ProgressionService } from "./progression/progression.service";
 import {
   AdminMonitoringGateway,
   MatchmakingGateway,
@@ -32,6 +33,7 @@ import { RolesGuard } from "./auth/roles.guard";
   providers: [
     AuthService,
     MatchmakingService,
+    ProgressionService,
     AuthGuard,
     RolesGuard,
     MatchmakingGateway,

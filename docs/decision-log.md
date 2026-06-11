@@ -20,3 +20,7 @@
 - Matchmaking creates a simulated match when two authenticated players join the same mode queue.
 - MMR deltas are mode-specific for MVP: ranked (+32/-24), unranked (+10/-8), fun (+5/-4).
 - Rank mapping is exposed as read-only configuration through the player API baseline.
+- Phase 3 progression runtime uses in-memory account progression, level reward configuration, reward grants, and XP audit entries until Prisma repositories are wired in a later persistence pass.
+- XP is awarded from accepted match results using mode base XP plus outcome bonus XP: ranked 120, unranked 90, fun 60, win 60, draw 40, loss 25.
+- Account levels use cumulative XP thresholds; level-up rewards are granted once per player and reward code.
+- Quests remain out of scope for Phase 3 and are documented as optional future scope.

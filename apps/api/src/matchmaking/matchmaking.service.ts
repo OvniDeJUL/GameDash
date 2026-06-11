@@ -11,6 +11,7 @@ import type {
   RankConfig
 } from "@gamedash/contracts";
 import type { AuthenticatedUser } from "../auth/auth.types";
+import { ProgressionService } from "../progression/progression.service";
 
 type PlayerState = QueueStatusResponse["state"];
 type MatchOutcome = "win" | "loss" | "draw";
@@ -63,6 +64,8 @@ const RANK_CONFIGS: RankConfig[] = [
 
 @Injectable()
 export class MatchmakingService {
+  constructor(private readonly progressionService = new ProgressionService()) {}
+
   private readonly queues = new Map<GameMode, QueueEntry[]>();
   private readonly statuses = new Map<string, PlayerStatus>();
   private readonly matches = new Map<string, StoredMatch>();
@@ -158,6 +161,14 @@ export class MatchmakingService {
       const mmrAfter = Math.max(0, mmrBefore + mmrDelta);
       const rankBefore = this.resolveRank(match.mode, mmrBefore);
       const rankAfter = this.resolveRank(match.mode, mmrAfter);
+      const progression = this.progressionService.awardMatchXp({
+        playerId,
+        mode: match.mode,
+        outcome,
+        matchId: match.id,
+        occurredAt: finishedAt,
+        actorId: actor.id
+      });
 
       this.setMmrValue(playerId, match.mode, mmrAfter);
       this.statuses.set(playerId, { state: "online" });
@@ -191,7 +202,8 @@ export class MatchmakingService {
         mmrAfter,
         mmrDelta,
         rankBefore,
-        rankAfter
+        rankAfter,
+        progression
       };
     });
 

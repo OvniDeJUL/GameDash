@@ -1,7 +1,9 @@
 import type {
   AuthTokensResponse,
+  LevelReward,
   MatchHistoryItem,
   PlayerMmrResponse,
+  PlayerProgressionResponse,
   QueueStatusResponse,
   RankConfig,
   RegisterRequest
@@ -72,6 +74,48 @@ const rankConfig: RankConfig[] = [
   { mode: "ranked", minMmr: 0, maxMmr: 899, rank: "BRONZE III", sortOrder: 10 },
   { mode: "ranked", minMmr: 900, maxMmr: 1099, rank: "BRONZE II", sortOrder: 20 },
   { mode: "ranked", minMmr: 1100, maxMmr: 1299, rank: "SILVER I", sortOrder: 30 }
+];
+
+const progression: PlayerProgressionResponse = {
+  playerId: "usr_demo",
+  level: 2,
+  lifetimeXp: 180,
+  currentLevelXp: 30,
+  nextLevelXp: 350,
+  xpToNextLevel: 170,
+  levelProgressPercent: 15,
+  updatedAt: "2026-06-11T10:08:00.000Z",
+  rewards: [
+    {
+      level: 2,
+      code: "profile_border_copper",
+      label: "Copper profile border",
+      rewardType: "cosmetic",
+      grantedAt: "2026-06-11T10:08:00.000Z"
+    }
+  ]
+};
+
+const levelRewards: LevelReward[] = [
+  {
+    level: 2,
+    code: "profile_border_copper",
+    label: "Copper profile border",
+    rewardType: "cosmetic"
+  },
+  {
+    level: 3,
+    code: "title_queue_climber",
+    label: "Queue Climber title",
+    rewardType: "title"
+  },
+  {
+    level: 4,
+    code: "soft_currency_250",
+    label: "250 soft currency",
+    rewardType: "soft_currency",
+    quantity: 250
+  }
 ];
 
 export default function HomePage() {
@@ -197,6 +241,42 @@ export default function HomePage() {
                 <em>{rank.mode}</em>
               </li>
             ))}
+          </ul>
+        </section>
+      </section>
+
+      <section className="competition-grid" aria-label="Account progression">
+        <section className="panel progression-card">
+          <h2>Account progression</h2>
+          <div className="level-meter">
+            <span>Level {progression.level}</span>
+            <strong>{progression.lifetimeXp} XP</strong>
+          </div>
+          <div
+            aria-label={`${progression.levelProgressPercent}% progress to next level`}
+            className="progress-track"
+          >
+            <span style={{ width: `${progression.levelProgressPercent}%` }} />
+          </div>
+          <p>
+            {progression.currentLevelXp} XP in current level, {progression.xpToNextLevel} XP to next.
+          </p>
+        </section>
+
+        <section className="panel">
+          <h2>Level rewards</h2>
+          <ul className="reward-list">
+            {levelRewards.map((reward) => {
+              const claimed = progression.rewards.some((grant) => grant.code === reward.code);
+
+              return (
+                <li key={reward.code}>
+                  <span>Level {reward.level}</span>
+                  <strong>{reward.label}</strong>
+                  <em>{claimed ? "granted" : reward.rewardType}</em>
+                </li>
+              );
+            })}
           </ul>
         </section>
       </section>

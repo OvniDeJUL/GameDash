@@ -23,12 +23,18 @@ Critical actions that must be logged:
 - Profile: player profile update.
 - Account sanctions.
 - MMR updates after match result.
+- Progression XP awards and level-up reward grants.
 - Economy transactions.
 - Map publish/update and moderation actions.
 
 Phase 2 runtime requirement:
 - Match result submission must write one audit entry per participant MMR update.
 - MMR audit metadata must include match id, mode, previous MMR, next MMR, delta, previous rank, and next rank.
+
+Phase 3 runtime requirement:
+- Match result submission must award XP only after a valid match outcome is accepted.
+- XP audit metadata must include match id, mode, outcome, awarded XP, previous level, next level, previous lifetime XP, next lifetime XP, and granted reward codes.
+- Level-up rewards must be granted at most once per player and reward code.
 
 ## Secret and environment handling
 - Never commit real secrets.

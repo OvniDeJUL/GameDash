@@ -13,6 +13,11 @@
 - Player MMR read endpoint.
 - Player match history endpoint.
 
+### Progression loop
+- XP awarded after match completion.
+- Account level read endpoint.
+- Level reward configuration and granted rewards.
+
 ### Economy loop
 - Store item listing.
 - Wallet read.
@@ -52,6 +57,12 @@
 - Match result route exists with typed request payload.
 - Player MMR and match history routes exist.
 - Phase 2 baseline includes simulated match attribution, runtime MMR updates, rank mapping, and MMR audit entries.
+
+### Progression
+- Match result submission awards XP to every participant.
+- Player progression endpoint exposes level, lifetime XP, current-level XP, next-level target, and granted rewards.
+- Level reward configuration is explicit in shared contracts and API responses.
+- Phase 3 baseline does not implement quests; quests remain optional future scope.
 
 ### Economy
 - Store, wallet, and purchase route contracts exist.

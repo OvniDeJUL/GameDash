@@ -187,6 +187,52 @@ paths:
                   $ref: "#/components/schemas/RankConfig"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /players/progression/rewards:
+    get:
+      operationId: getProgressionRewards
+      tags: [Players]
+      summary: Get account level reward configuration
+      responses:
+        "200":
+          description: Level reward configuration
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LevelReward"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /players/progression/rules:
+    get:
+      operationId: getProgressionRules
+      tags: [Players]
+      summary: Get account progression XP rules
+      responses:
+        "200":
+          description: XP and level threshold configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgressionRulesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /players/{playerId}/progression:
+    get:
+      operationId: getPlayerProgression
+      tags: [Players]
+      summary: Get player account progression
+      parameters:
+        - $ref: "#/components/parameters/playerId"
+      responses:
+        "200":
+          description: Player progression
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerProgressionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /players/{playerId}/mmr:
     get:
       operationId: getPlayerMmr
@@ -646,7 +692,7 @@ components:
           type: string
     MatchParticipantResult:
       type: object
-      required: [playerId, outcome, mmrBefore, mmrAfter, mmrDelta, rankBefore, rankAfter]
+      required: [playerId, outcome, mmrBefore, mmrAfter, mmrDelta, rankBefore, rankAfter, progression]
       properties:
         playerId:
           type: string
@@ -663,6 +709,31 @@ components:
           type: string
         rankAfter:
           type: string
+        progression:
+          $ref: "#/components/schemas/MatchProgressionResult"
+    MatchProgressionResult:
+      type: object
+      required: [xpAwarded, levelBefore, levelAfter, lifetimeXpBefore, lifetimeXpAfter, rewardsGranted]
+      properties:
+        xpAwarded:
+          type: integer
+          minimum: 0
+        levelBefore:
+          type: integer
+          minimum: 1
+        levelAfter:
+          type: integer
+          minimum: 1
+        lifetimeXpBefore:
+          type: integer
+          minimum: 0
+        lifetimeXpAfter:
+          type: integer
+          minimum: 0
+        rewardsGranted:
+          type: array
+          items:
+            $ref: "#/components/schemas/GrantedLevelReward"
     MatchResultResponse:
       type: object
       required: [accepted, mmrUpdated, matchId, mode, participants]
@@ -686,7 +757,6 @@ components:
       properties:
         playerId:
           type: string
-          format: uuid
         ratings:
           type: array
           items:
@@ -745,6 +815,110 @@ components:
           type: string
         sortOrder:
           type: integer
+    RewardType:
+      type: string
+      enum: [soft_currency, cosmetic, title]
+    LevelReward:
+      type: object
+      required: [level, code, label, rewardType]
+      properties:
+        level:
+          type: integer
+          minimum: 1
+        code:
+          type: string
+        label:
+          type: string
+        rewardType:
+          $ref: "#/components/schemas/RewardType"
+        quantity:
+          type: integer
+          minimum: 0
+    GrantedLevelReward:
+      allOf:
+        - $ref: "#/components/schemas/LevelReward"
+        - type: object
+          required: [grantedAt]
+          properties:
+            grantedAt:
+              type: string
+              format: date-time
+    LevelThreshold:
+      type: object
+      required: [level, minLifetimeXp]
+      properties:
+        level:
+          type: integer
+          minimum: 1
+        minLifetimeXp:
+          type: integer
+          minimum: 0
+    ProgressionRulesResponse:
+      type: object
+      required: [baseXpByMode, outcomeXp, levelThresholds]
+      properties:
+        baseXpByMode:
+          type: object
+          required: [ranked, unranked, fun]
+          properties:
+            ranked:
+              type: integer
+              minimum: 0
+            unranked:
+              type: integer
+              minimum: 0
+            fun:
+              type: integer
+              minimum: 0
+        outcomeXp:
+          type: object
+          required: [win, loss, draw]
+          properties:
+            win:
+              type: integer
+              minimum: 0
+            loss:
+              type: integer
+              minimum: 0
+            draw:
+              type: integer
+              minimum: 0
+        levelThresholds:
+          type: array
+          items:
+            $ref: "#/components/schemas/LevelThreshold"
+    PlayerProgressionResponse:
+      type: object
+      required: [playerId, level, lifetimeXp, currentLevelXp, levelProgressPercent, rewards, updatedAt]
+      properties:
+        playerId:
+          type: string
+        level:
+          type: integer
+          minimum: 1
+        lifetimeXp:
+          type: integer
+          minimum: 0
+        currentLevelXp:
+          type: integer
+          minimum: 0
+        nextLevelXp:
+          type: integer
+          minimum: 0
+        xpToNextLevel:
+          type: integer
+          minimum: 0
+        levelProgressPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        rewards:
+          type: array
+          items:
+            $ref: "#/components/schemas/GrantedLevelReward"
+        updatedAt:
+          type: string
+          format: date-time
     StoreItem:
       type: object
       required: [id, name, currencyType, price]

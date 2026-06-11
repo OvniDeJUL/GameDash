@@ -37,6 +37,12 @@ enum CurrencyType {
   HARD
 }
 
+enum RewardType {
+  SOFT_CURRENCY
+  COSMETIC
+  TITLE
+}
+
 enum MapStatus {
   DRAFT
   BETA
@@ -59,10 +65,12 @@ model User {
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
   profile        PlayerProfile?
+  progression    AccountProgression?
   refreshTokens  RefreshToken[]
   mmrRatings     PlayerMmr[]
   queueEntries   MatchmakingQueue[]
   matchEntries   MatchParticipant[]
+  levelRewards   PlayerLevelRewardGrant[]
   transactions   Transaction[]
   wallet         Wallet?
   inventoryItems InventoryItem[]
@@ -164,6 +172,46 @@ model RankConfig {
 
   @@unique([mode, rank])
   @@index([mode, minMmr])
+}
+
+model AccountProgression {
+  id         String   @id @default(uuid())
+  userId     String   @unique
+  level      Int      @default(1)
+  lifetimeXp Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model LevelReward {
+  id         String     @id @default(uuid())
+  level      Int
+  code       String     @unique
+  label      String
+  rewardType RewardType
+  quantity   Int?
+  active     Boolean    @default(true)
+  sortOrder  Int
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([level, active])
+}
+
+model PlayerLevelRewardGrant {
+  id         String     @id @default(uuid())
+  userId     String
+  level      Int
+  rewardCode String
+  label      String
+  rewardType RewardType
+  quantity   Int?
+  grantedAt  DateTime   @default(now())
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, rewardCode])
+  @@index([userId, grantedAt])
 }
 
 model Wallet {

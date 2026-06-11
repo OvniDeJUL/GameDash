@@ -114,14 +114,16 @@ input {
 }
 
 .rating-list,
-.history-list {
+.history-list,
+.reward-list {
   display: grid;
   gap: 0.75rem;
   list-style: none;
 }
 
 .rating-list li,
-.history-list li {
+.history-list li,
+.reward-list li {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
@@ -131,20 +133,54 @@ input {
 }
 
 .rating-list span,
-.history-list span {
+.history-list span,
+.reward-list span {
   color: #475569;
   text-transform: capitalize;
 }
 
 .rating-list strong,
-.history-list strong {
+.history-list strong,
+.reward-list strong {
   color: #0f172a;
 }
 
 .rating-list em,
-.history-list em {
+.history-list em,
+.reward-list em {
   color: #64748b;
   font-style: normal;
+}
+
+.progression-card p {
+  color: #475569;
+}
+
+.level-meter {
+  align-items: baseline;
+  display: flex;
+  justify-content: space-between;
+}
+
+.level-meter span {
+  color: #475569;
+}
+
+.level-meter strong {
+  font-size: 1.5rem;
+}
+
+.progress-track {
+  background: #e2e8f0;
+  border-radius: 999px;
+  height: 0.75rem;
+  overflow: hidden;
+}
+
+.progress-track span {
+  background: linear-gradient(90deg, #0f766e, #f59e0b);
+  display: block;
+  height: 100%;
 }
 
 @media (max-width: 720px) {
@@ -159,7 +195,8 @@ input {
   }
 
   .rating-list li,
-  .history-list li {
+  .history-list li,
+  .reward-list li {
     grid-template-columns: 1fr;
   }
 }

@@ -1,6 +1,7 @@
 export type Role = "player" | "staff" | "admin";
 export type GameMode = "ranked" | "unranked" | "fun";
 export type MapStatus = "draft" | "beta" | "stable" | "hidden";
+export type RewardType = "soft_currency" | "cosmetic" | "title";
 
 export interface HealthResponse {
   status: "ok" | "degraded";
@@ -85,6 +86,7 @@ export interface MatchParticipantResult {
   mmrDelta: number;
   rankBefore: string;
   rankAfter: string;
+  progression: MatchProgressionResult;
 }
 
 export interface MatchResultResponse {
@@ -126,6 +128,50 @@ export interface RankConfig {
   maxMmr?: number;
   rank: string;
   sortOrder: number;
+}
+
+export interface LevelReward {
+  level: number;
+  code: string;
+  label: string;
+  rewardType: RewardType;
+  quantity?: number;
+}
+
+export interface GrantedLevelReward extends LevelReward {
+  grantedAt: string;
+}
+
+export interface LevelThreshold {
+  level: number;
+  minLifetimeXp: number;
+}
+
+export interface ProgressionRulesResponse {
+  baseXpByMode: Record<GameMode, number>;
+  outcomeXp: Record<"win" | "loss" | "draw", number>;
+  levelThresholds: LevelThreshold[];
+}
+
+export interface MatchProgressionResult {
+  xpAwarded: number;
+  levelBefore: number;
+  levelAfter: number;
+  lifetimeXpBefore: number;
+  lifetimeXpAfter: number;
+  rewardsGranted: GrantedLevelReward[];
+}
+
+export interface PlayerProgressionResponse {
+  playerId: string;
+  level: number;
+  lifetimeXp: number;
+  currentLevelXp: number;
+  nextLevelXp?: number;
+  xpToNextLevel?: number;
+  levelProgressPercent: number;
+  rewards: GrantedLevelReward[];
+  updatedAt: string;
 }
 
 export interface StoreItem {

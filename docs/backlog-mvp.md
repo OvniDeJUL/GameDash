@@ -15,19 +15,26 @@ Status: done
 - Schema: queue entry, match, participant, player mmr.
 - Contracts: queue/match/mmr DTOs.
 
-## Slice 3 - Economy baseline
+## Slice 3 - Progression baseline
+Status: done
+- API: player progression, progression rules, level rewards.
+- API: match result awards XP and grants level-up rewards.
+- Schema: account progression, level rewards, player reward grants.
+- Contracts: progression, XP rules, level reward DTOs.
+
+## Slice 4 - Economy baseline
 Status: ready
 - API: store items, wallet, purchase transaction.
 - Schema: wallet, store item, transaction, inventory item.
 - Contracts: wallet/store/purchase DTOs.
 
-## Slice 4 - UGC maps baseline
+## Slice 5 - UGC maps baseline
 Status: ready
 - API: create map, add version, vote, test, list maps.
 - Schema: map, map version, vote, test, favorite.
 - Contracts: map creation/version/vote/test DTOs.
 
-## Slice 5 - Admin and observability baseline
+## Slice 6 - Admin and observability baseline
 Status: ready
 - API: admin dashboard placeholder.
 - Schema: sanctions, moderation events, audit log.
