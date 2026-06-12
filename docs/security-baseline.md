@@ -50,6 +50,13 @@ Phase 5 runtime requirement:
 - Popularity scoring must be derived from votes, completed tests, favorites, version count, and recency, not from user-controlled raw input.
 - Moderation-relevant map data must include status, review metadata, reports, and moderation events for later staff workflows.
 
+Phase 6 runtime requirement:
+- Staff and admin can read dashboard, settings, moderation signals, and moderation history.
+- Only admin can update studio settings.
+- Staff and admin can apply account and map moderation actions.
+- Settings updates and moderation actions must write audit entries with actor id, target id, action, reason, and relevant metadata.
+- Moderation history must be append-only in the runtime baseline.
+
 ## Secret and environment handling
 - Never commit real secrets.
 - Use `.env.example` as contract only.

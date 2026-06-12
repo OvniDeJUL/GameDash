@@ -34,9 +34,11 @@
 - Favorite maps, search maps, and read creator/map stats.
 
 ### Studio/admin baseline
-- Admin dashboard placeholder endpoint.
+- Admin dashboard endpoint with KPI baseline.
 - Admin sanctions/moderation represented in schema and contracts.
 - Audit log baseline represented in schema and docs.
+- Studio settings for matchmaking, MMR, and economy tuning.
+- Moderation actions for accounts and maps with signals and history.
 
 ## Explicit non-goals (phase 0 foundation)
 - Full gameplay integration.
@@ -81,6 +83,7 @@
 ### Backoffice/admin
 - Admin baseline route exists.
 - Moderation/sanction entities exist in Prisma schema.
+- Phase 6 baseline includes studio KPIs, settings read/update, account/map moderation actions, moderation signals/history, staff/admin route protection, and audit entries for settings/moderation actions.
 
 ### Cross-cutting
 - OpenAPI passes lint.

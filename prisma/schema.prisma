@@ -85,6 +85,7 @@ model User {
   mapFavorites   MapFavorite[]
   mapReports     MapReport[]
   sanctions      Sanction[]
+  moderationSignalsReviewed ModerationSignal[] @relation("ModerationSignalReviewer")
   auditLogs      AuditLog[]
 }
 
@@ -380,12 +381,56 @@ model MapModerationEvent {
 model Sanction {
   id        String       @id @default(uuid())
   userId    String
+  actorId   String?
   type      SanctionType
   reason    String
+  status    String       @default("active")
+  metadata  Json?
   startedAt DateTime     @default(now())
   endsAt    DateTime?
   createdAt DateTime     @default(now())
   user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+}
+
+model StudioSetting {
+  key         String   @id
+  value       Json
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ModerationSignal {
+  id           String   @id @default(uuid())
+  targetType   String
+  targetId     String
+  reason       String
+  status       String   @default("open")
+  source       String
+  reviewedAt   DateTime?
+  reviewedById String?
+  createdAt    DateTime @default(now())
+  reviewedBy   User?    @relation("ModerationSignalReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([targetType, targetId])
+}
+
+model ModerationHistory {
+  id         String   @id @default(uuid())
+  actorId    String
+  targetType String
+  targetId   String
+  action     String
+  reason     String
+  metadata   Json?
+  expiresAt  DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([targetType, targetId, createdAt])
+  @@index([actorId, createdAt])
 }
 
 model AuditLog {

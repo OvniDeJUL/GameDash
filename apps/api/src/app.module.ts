@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AuthGuard } from "./auth/auth.guard";
 import { AdminController } from "./admin/admin.controller";
+import { AdminService } from "./admin/admin.service";
 import { AuthController } from "./auth/auth.controller";
 import { AuthService } from "./auth/auth.service";
 import { EconomyController } from "./economy/economy.controller";
@@ -33,6 +34,7 @@ import { RolesGuard } from "./auth/roles.guard";
     AdminController
   ],
   providers: [
+    AdminService,
     AuthService,
     MatchmakingService,
     ProgressionService,

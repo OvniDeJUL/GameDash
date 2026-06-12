@@ -4,6 +4,10 @@ export type MapStatus = "draft" | "beta" | "stable" | "hidden";
 export type RewardType = "soft_currency" | "cosmetic" | "title";
 export type CurrencyType = "soft" | "hard";
 export type TransactionStatus = "accepted" | "rejected";
+export type AccountModerationAction = "warn" | "suspend" | "ban";
+export type MapModerationAction = "hide" | "restore" | "feature";
+export type ModerationTargetType = "account" | "map";
+export type ModerationSignalStatus = "open" | "reviewed" | "dismissed";
 
 export interface HealthResponse {
   status: "ok" | "degraded";
@@ -314,4 +318,74 @@ export interface AdminDashboardSummary {
   dailyMatches: number;
   virtualRevenue: number;
   mapActivity: number;
+  openModerationSignals: number;
+  activeSanctions: number;
+  settingsLastUpdated: string;
+}
+
+export interface MatchmakingSettings {
+  rankedQueueMaxWaitSeconds: number;
+  funQueueMaxWaitSeconds: number;
+  matchSize: number;
+}
+
+export interface MmrSettings {
+  placementMmr: number;
+  rankedWinDelta: number;
+  rankedLossDelta: number;
+  unrankedWinDelta: number;
+  unrankedLossDelta: number;
+}
+
+export interface EconomySettings {
+  starterSoftBalance: number;
+  starterHardBalance: number;
+  purchaseEnabled: boolean;
+  refundWindowHours: number;
+}
+
+export interface StudioSettingsResponse {
+  matchmaking: MatchmakingSettings;
+  mmr: MmrSettings;
+  economy: EconomySettings;
+  updatedAt: string;
+  updatedBy?: string;
+}
+
+export interface UpdateStudioSettingsRequest {
+  matchmaking?: Partial<MatchmakingSettings>;
+  mmr?: Partial<MmrSettings>;
+  economy?: Partial<EconomySettings>;
+}
+
+export interface AccountModerationRequest {
+  action: AccountModerationAction;
+  reason: string;
+  durationHours?: number;
+}
+
+export interface MapModerationRequest {
+  action: MapModerationAction;
+  reason: string;
+}
+
+export interface ModerationActionResponse {
+  id: string;
+  targetType: ModerationTargetType;
+  targetId: string;
+  action: string;
+  reason: string;
+  actorId: string;
+  createdAt: string;
+  expiresAt?: string;
+}
+
+export interface ModerationSignalResponse {
+  id: string;
+  targetType: ModerationTargetType;
+  targetId: string;
+  reason: string;
+  status: ModerationSignalStatus;
+  source: string;
+  createdAt: string;
 }

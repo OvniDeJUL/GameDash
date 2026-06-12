@@ -32,3 +32,7 @@
 - Map popularity score is derived from vote score, completed tests, favorites, version count, and a small recency boost.
 - Public map browsing hides hidden maps by default; explicit status filtering can retrieve a specific status for later staff-facing workflows.
 - Moderation readiness is modeled with map status, review metadata, reports, and moderation events.
+- Phase 6 backoffice runtime uses in-memory studio settings, moderation actions, moderation signals, and admin audit entries until Prisma repositories are wired in a later persistence pass.
+- Studio settings cover matchmaking queue tuning, MMR deltas, and economy purchase/balance controls.
+- Settings writes are admin-only; moderation actions are available to staff and admin.
+- Moderation history is append-only in the runtime baseline.

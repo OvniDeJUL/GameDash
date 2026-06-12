@@ -625,6 +625,119 @@ paths:
                 $ref: "#/components/schemas/AdminDashboardSummary"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /admin/settings:
+    get:
+      operationId: getStudioSettings
+      tags: [Admin]
+      summary: Get studio tuning settings
+      responses:
+        "200":
+          description: Studio settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioSettingsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      operationId: updateStudioSettings
+      tags: [Admin]
+      summary: Update studio tuning settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateStudioSettingsRequest"
+      responses:
+        "200":
+          description: Updated studio settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioSettingsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /admin/moderation/signals:
+    get:
+      operationId: getModerationSignals
+      tags: [Admin]
+      summary: Get moderation signals and reports
+      responses:
+        "200":
+          description: Moderation signals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ModerationSignalResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /admin/moderation/history:
+    get:
+      operationId: getModerationHistory
+      tags: [Admin]
+      summary: Get moderation action history
+      responses:
+        "200":
+          description: Moderation history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ModerationActionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /admin/moderation/accounts/{userId}/actions:
+    post:
+      operationId: moderateAccount
+      tags: [Admin]
+      summary: Apply account moderation action
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountModerationRequest"
+      responses:
+        "201":
+          description: Account moderation action recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModerationActionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /admin/moderation/maps/{mapId}/actions:
+    post:
+      operationId: moderateMap
+      tags: [Admin]
+      summary: Apply map moderation action
+      parameters:
+        - $ref: "#/components/parameters/mapId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MapModerationRequest"
+      responses:
+        "201":
+          description: Map moderation action recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModerationActionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 components:
   securitySchemes:
     bearerAuth:
@@ -1369,7 +1482,16 @@ components:
           format: float
     AdminDashboardSummary:
       type: object
-      required: [activePlayers, dailyMatches, virtualRevenue, mapActivity]
+      required:
+        [
+          activePlayers,
+          dailyMatches,
+          virtualRevenue,
+          mapActivity,
+          openModerationSignals,
+          activeSanctions,
+          settingsLastUpdated
+        ]
       properties:
         activePlayers:
           type: integer
@@ -1379,6 +1501,189 @@ components:
           type: integer
         mapActivity:
           type: integer
+        openModerationSignals:
+          type: integer
+          minimum: 0
+        activeSanctions:
+          type: integer
+          minimum: 0
+        settingsLastUpdated:
+          type: string
+          format: date-time
+    MatchmakingSettings:
+      type: object
+      required: [rankedQueueMaxWaitSeconds, funQueueMaxWaitSeconds, matchSize]
+      properties:
+        rankedQueueMaxWaitSeconds:
+          type: integer
+          minimum: 0
+        funQueueMaxWaitSeconds:
+          type: integer
+          minimum: 0
+        matchSize:
+          type: integer
+          minimum: 2
+    MmrSettings:
+      type: object
+      required: [placementMmr, rankedWinDelta, rankedLossDelta, unrankedWinDelta, unrankedLossDelta]
+      properties:
+        placementMmr:
+          type: integer
+          minimum: 0
+        rankedWinDelta:
+          type: integer
+        rankedLossDelta:
+          type: integer
+        unrankedWinDelta:
+          type: integer
+        unrankedLossDelta:
+          type: integer
+    EconomySettings:
+      type: object
+      required: [starterSoftBalance, starterHardBalance, purchaseEnabled, refundWindowHours]
+      properties:
+        starterSoftBalance:
+          type: integer
+          minimum: 0
+        starterHardBalance:
+          type: integer
+          minimum: 0
+        purchaseEnabled:
+          type: boolean
+        refundWindowHours:
+          type: integer
+          minimum: 0
+    StudioSettingsResponse:
+      type: object
+      required: [matchmaking, mmr, economy, updatedAt]
+      properties:
+        matchmaking:
+          $ref: "#/components/schemas/MatchmakingSettings"
+        mmr:
+          $ref: "#/components/schemas/MmrSettings"
+        economy:
+          $ref: "#/components/schemas/EconomySettings"
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: string
+    UpdateStudioSettingsRequest:
+      type: object
+      properties:
+        matchmaking:
+          type: object
+          properties:
+            rankedQueueMaxWaitSeconds:
+              type: integer
+              minimum: 0
+            funQueueMaxWaitSeconds:
+              type: integer
+              minimum: 0
+            matchSize:
+              type: integer
+              minimum: 2
+        mmr:
+          type: object
+          properties:
+            placementMmr:
+              type: integer
+              minimum: 0
+            rankedWinDelta:
+              type: integer
+            rankedLossDelta:
+              type: integer
+            unrankedWinDelta:
+              type: integer
+            unrankedLossDelta:
+              type: integer
+        economy:
+          type: object
+          properties:
+            starterSoftBalance:
+              type: integer
+              minimum: 0
+            starterHardBalance:
+              type: integer
+              minimum: 0
+            purchaseEnabled:
+              type: boolean
+            refundWindowHours:
+              type: integer
+              minimum: 0
+    AccountModerationAction:
+      type: string
+      enum: [warn, suspend, ban]
+    MapModerationAction:
+      type: string
+      enum: [hide, restore, feature]
+    ModerationTargetType:
+      type: string
+      enum: [account, map]
+    ModerationSignalStatus:
+      type: string
+      enum: [open, reviewed, dismissed]
+    AccountModerationRequest:
+      type: object
+      required: [action, reason]
+      properties:
+        action:
+          $ref: "#/components/schemas/AccountModerationAction"
+        reason:
+          type: string
+        durationHours:
+          type: integer
+          minimum: 1
+    MapModerationRequest:
+      type: object
+      required: [action, reason]
+      properties:
+        action:
+          $ref: "#/components/schemas/MapModerationAction"
+        reason:
+          type: string
+    ModerationActionResponse:
+      type: object
+      required: [id, targetType, targetId, action, reason, actorId, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        targetType:
+          $ref: "#/components/schemas/ModerationTargetType"
+        targetId:
+          type: string
+        action:
+          type: string
+        reason:
+          type: string
+        actorId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+    ModerationSignalResponse:
+      type: object
+      required: [id, targetType, targetId, reason, status, source, createdAt]
+      properties:
+        id:
+          type: string
+        targetType:
+          $ref: "#/components/schemas/ModerationTargetType"
+        targetId:
+          type: string
+        reason:
+          type: string
+        status:
+          $ref: "#/components/schemas/ModerationSignalStatus"
+        source:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
     ErrorResponse:
       type: object
       required: [error, message]

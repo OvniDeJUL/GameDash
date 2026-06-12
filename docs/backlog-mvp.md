@@ -35,8 +35,8 @@ Status: done
 - Contracts: map creation/version/vote/test DTOs.
 
 ## Slice 6 - Admin and observability baseline
-Status: ready
-- API: admin dashboard placeholder.
+Status: done
+- API: admin dashboard KPIs, settings, moderation signals, and moderation history.
 - Schema: sanctions, moderation events, audit log.
 - Realtime: event catalog namespaces and fallback docs.
 - Contracts: admin summary and moderation DTOs.

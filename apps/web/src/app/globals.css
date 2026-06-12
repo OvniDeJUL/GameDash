@@ -118,7 +118,8 @@ input {
 .reward-list,
 .store-list,
 .inventory-list,
-.map-list {
+.map-list,
+.admin-list {
   display: grid;
   gap: 0.75rem;
   list-style: none;
@@ -129,7 +130,8 @@ input {
 .reward-list li,
 .store-list li,
 .inventory-list li,
-.map-list li {
+.map-list li,
+.admin-list li {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
@@ -143,7 +145,8 @@ input {
 .reward-list span,
 .store-list span,
 .inventory-list span,
-.map-list span {
+.map-list span,
+.admin-list span {
   color: #475569;
   text-transform: capitalize;
 }
@@ -153,7 +156,8 @@ input {
 .reward-list strong,
 .store-list strong,
 .inventory-list strong,
-.map-list strong {
+.map-list strong,
+.admin-list strong {
   color: #0f172a;
 }
 
@@ -162,7 +166,8 @@ input {
 .reward-list em,
 .store-list em,
 .inventory-list em,
-.map-list em {
+.map-list em,
+.admin-list em {
   color: #64748b;
   font-style: normal;
 }
@@ -234,7 +239,8 @@ input {
   .reward-list li,
   .store-list li,
   .inventory-list li,
-  .map-list li {
+  .map-list li,
+  .admin-list li {
     grid-template-columns: 1fr;
   }
 }

@@ -1,11 +1,15 @@
 import type {
+  AdminDashboardSummary,
   AuthTokensResponse,
   InventoryItemResponse,
   LevelReward,
   MatchHistoryItem,
   MapSummary,
+  ModerationActionResponse,
+  ModerationSignalResponse,
   PlayerMmrResponse,
   PlayerProgressionResponse,
+  StudioSettingsResponse,
   StoreItem,
   TransactionResponse,
   WalletResponse,
@@ -223,6 +227,63 @@ const communityMaps: MapSummary[] = [
       favorites: 0,
       popularityScore: 18
     }
+  }
+];
+
+const adminDashboard: AdminDashboardSummary = {
+  activePlayers: 1200,
+  dailyMatches: 9800,
+  virtualRevenue: 45200,
+  mapActivity: 310,
+  openModerationSignals: 2,
+  activeSanctions: 1,
+  settingsLastUpdated: "2026-06-12T08:00:00.000Z"
+};
+
+const studioSettings: StudioSettingsResponse = {
+  matchmaking: {
+    rankedQueueMaxWaitSeconds: 120,
+    funQueueMaxWaitSeconds: 45,
+    matchSize: 2
+  },
+  mmr: {
+    placementMmr: 1000,
+    rankedWinDelta: 28,
+    rankedLossDelta: -22,
+    unrankedWinDelta: 10,
+    unrankedLossDelta: -8
+  },
+  economy: {
+    starterSoftBalance: 1000,
+    starterHardBalance: 20,
+    purchaseEnabled: true,
+    refundWindowHours: 24
+  },
+  updatedAt: adminDashboard.settingsLastUpdated,
+  updatedBy: "usr_admin"
+};
+
+const moderationSignals: ModerationSignalResponse[] = [
+  {
+    id: "sig_map_report_spam",
+    targetType: "map",
+    targetId: "map_reported_spam",
+    reason: "Repeated low-quality map reports",
+    status: "open",
+    source: "map_report",
+    createdAt: "2026-06-12T08:00:00.000Z"
+  }
+];
+
+const moderationHistory: ModerationActionResponse[] = [
+  {
+    id: "8f599355-f43d-45a7-b028-f38d982d8fd6",
+    targetType: "map",
+    targetId: "map_reported_spam",
+    action: "map.hide",
+    reason: "Unsafe UGC metadata",
+    actorId: "usr_staff",
+    createdAt: "2026-06-12T08:05:00.000Z"
   }
 ];
 
@@ -487,6 +548,77 @@ export default function HomePage() {
               </dd>
             </div>
           </dl>
+        </section>
+      </section>
+
+      <section className="competition-grid" aria-label="Studio backoffice">
+        <section className="panel">
+          <h2>Studio dashboard</h2>
+          <ul className="admin-list">
+            <li>
+              <span>Players</span>
+              <strong>{adminDashboard.activePlayers}</strong>
+              <em>active</em>
+            </li>
+            <li>
+              <span>Matches</span>
+              <strong>{adminDashboard.dailyMatches}</strong>
+              <em>daily</em>
+            </li>
+            <li>
+              <span>Signals</span>
+              <strong>{adminDashboard.openModerationSignals}</strong>
+              <em>open</em>
+            </li>
+          </ul>
+        </section>
+
+        <section className="panel">
+          <h2>Studio settings</h2>
+          <dl>
+            <div>
+              <dt>Ranked wait</dt>
+              <dd>{studioSettings.matchmaking.rankedQueueMaxWaitSeconds}s</dd>
+            </div>
+            <div>
+              <dt>Ranked MMR</dt>
+              <dd>
+                +{studioSettings.mmr.rankedWinDelta} / {studioSettings.mmr.rankedLossDelta}
+              </dd>
+            </div>
+            <div>
+              <dt>Purchases</dt>
+              <dd>{studioSettings.economy.purchaseEnabled ? "enabled" : "disabled"}</dd>
+            </div>
+          </dl>
+        </section>
+      </section>
+
+      <section className="competition-grid" aria-label="Moderation backoffice">
+        <section className="panel">
+          <h2>Moderation signals</h2>
+          <ul className="admin-list">
+            {moderationSignals.map((signal) => (
+              <li key={signal.id}>
+                <span>{signal.targetType}</span>
+                <strong>{signal.reason}</strong>
+                <em>{signal.status}</em>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="panel">
+          <h2>Moderation history</h2>
+          <ul className="admin-list">
+            {moderationHistory.map((action) => (
+              <li key={action.id}>
+                <span>{action.action}</span>
+                <strong>{action.reason}</strong>
+                <em>{action.actorId}</em>
+              </li>
+            ))}
+          </ul>
         </section>
       </section>
     </main>
