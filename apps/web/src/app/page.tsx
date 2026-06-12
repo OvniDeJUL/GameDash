@@ -1,6 +1,8 @@
 import type {
   AdminDashboardSummary,
   AuthTokensResponse,
+  ErrorResponse,
+  HealthResponse,
   InventoryItemResponse,
   LevelReward,
   MatchHistoryItem,
@@ -286,6 +288,51 @@ const moderationHistory: ModerationActionResponse[] = [
     createdAt: "2026-06-12T08:05:00.000Z"
   }
 ];
+
+const qualityHealth: HealthResponse = {
+  status: "ok",
+  time: "2026-06-12T09:00:00.000Z",
+  version: "0.1.0",
+  uptimeSeconds: 3600,
+  checks: [
+    {
+      name: "api",
+      status: "ok",
+      detail: "NestJS runtime is accepting requests."
+    },
+    {
+      name: "contracts",
+      status: "ok",
+      detail: "OpenAPI and shared DTO validation are in the mandatory suite."
+    },
+    {
+      name: "storage",
+      status: "ok",
+      detail: "MVP runtime uses in-memory repositories with Prisma baseline."
+    }
+  ],
+  observability: {
+    startedAt: "2026-06-12T08:00:00.000Z",
+    uptimeSeconds: 3600,
+    requestCount: 128,
+    errorCount: 2,
+    criticalErrorCount: 0,
+    lastRequestAt: "2026-06-12T09:00:00.000Z",
+    p95DurationMs: 42,
+    recentErrors: []
+  }
+};
+
+const errorContract: ErrorResponse = {
+  error: {
+    code: "forbidden",
+    message: "Insufficient role for this action.",
+    statusCode: 403,
+    timestamp: "2026-06-12T09:00:00.000Z",
+    path: "/api/v1/admin/settings",
+    requestId: "req_demo_quality"
+  }
+};
 
 export default function HomePage() {
   return (
@@ -619,6 +666,47 @@ export default function HomePage() {
               </li>
             ))}
           </ul>
+        </section>
+      </section>
+
+      <section className="competition-grid" aria-label="Quality and security hardening">
+        <section className="panel">
+          <h2>Quality guardrails</h2>
+          <ul className="quality-list">
+            <li>
+              <span>Health</span>
+              <strong>{qualityHealth.status}</strong>
+              <em>{qualityHealth.observability.p95DurationMs}ms p95</em>
+            </li>
+            <li>
+              <span>Requests</span>
+              <strong>{qualityHealth.observability.requestCount}</strong>
+              <em>{qualityHealth.observability.errorCount} errors</em>
+            </li>
+            <li>
+              <span>Integration</span>
+              <strong>critical flows</strong>
+              <em>covered</em>
+            </li>
+          </ul>
+        </section>
+
+        <section className="panel">
+          <h2>Error contract</h2>
+          <dl>
+            <div>
+              <dt>Code</dt>
+              <dd>{errorContract.error.code}</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>{errorContract.error.statusCode}</dd>
+            </div>
+            <div>
+              <dt>Trace</dt>
+              <dd>{errorContract.error.requestId}</dd>
+            </div>
+          </dl>
         </section>
       </section>
     </main>

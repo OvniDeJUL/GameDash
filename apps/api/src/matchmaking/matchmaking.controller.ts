@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Post, UseGuards } from "@nestjs/common";
 import type { QueueJoinRequest, QueueStatusResponse } from "@gamedash/contracts";
 import { AuthGuard } from "../auth/auth.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
@@ -8,7 +8,10 @@ import { MatchmakingService } from "./matchmaking.service";
 @Controller("matchmaking/queue")
 @UseGuards(AuthGuard)
 export class MatchmakingController {
-  constructor(private readonly matchmakingService: MatchmakingService) {}
+  constructor(
+    @Inject(MatchmakingService)
+    private readonly matchmakingService: MatchmakingService
+  ) {}
 
   @Post("join")
   joinQueue(

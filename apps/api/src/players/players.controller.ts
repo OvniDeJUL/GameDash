@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Patch, UseGuards } from "@nestjs/common";
 import type {
   MatchHistoryItem,
   PlayerProfileResponse,
@@ -20,8 +20,11 @@ import { ProgressionService } from "../progression/progression.service";
 @UseGuards(AuthGuard)
 export class PlayersController {
   constructor(
+    @Inject(AuthService)
     private readonly authService: AuthService,
+    @Inject(MatchmakingService)
     private readonly matchmakingService: MatchmakingService,
+    @Inject(ProgressionService)
     private readonly progressionService: ProgressionService
   ) {}
 

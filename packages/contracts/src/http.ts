@@ -12,6 +12,48 @@ export type ModerationSignalStatus = "open" | "reviewed" | "dismissed";
 export interface HealthResponse {
   status: "ok" | "degraded";
   time: string;
+  version: string;
+  uptimeSeconds: number;
+  checks: HealthCheckResponse[];
+  observability: ObservabilitySnapshotResponse;
+}
+
+export interface HealthCheckResponse {
+  name: string;
+  status: "ok" | "degraded";
+  detail?: string;
+}
+
+export interface ObservabilityErrorResponse {
+  method: string;
+  path: string;
+  statusCode: number;
+  code: string;
+  message: string;
+  requestId: string;
+  occurredAt: string;
+}
+
+export interface ObservabilitySnapshotResponse {
+  startedAt: string;
+  uptimeSeconds: number;
+  requestCount: number;
+  errorCount: number;
+  criticalErrorCount: number;
+  lastRequestAt?: string;
+  p95DurationMs: number;
+  recentErrors: ObservabilityErrorResponse[];
+}
+
+export interface ErrorResponse {
+  error: {
+    code: string;
+    message: string;
+    statusCode: number;
+    timestamp: string;
+    path: string;
+    requestId: string;
+  };
 }
 
 export interface RegisterRequest {

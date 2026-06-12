@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Post, UseGuards } from "@nestjs/common";
 import type {
   InventoryItemResponse,
   PurchaseRequest,
@@ -15,7 +15,10 @@ import { EconomyService } from "./economy.service";
 @Controller("economy")
 @UseGuards(AuthGuard)
 export class EconomyController {
-  constructor(private readonly economyService: EconomyService) {}
+  constructor(
+    @Inject(EconomyService)
+    private readonly economyService: EconomyService
+  ) {}
 
   @Get("store/items")
   getStoreItems(): StoreItem[] {

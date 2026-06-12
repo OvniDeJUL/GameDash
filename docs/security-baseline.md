@@ -57,6 +57,14 @@ Phase 6 runtime requirement:
 - Settings updates and moderation actions must write audit entries with actor id, target id, action, reason, and relevant metadata.
 - Moderation history must be append-only in the runtime baseline.
 
+Phase 7 runtime requirement:
+- Every HTTP response should include or preserve an `x-request-id` for traceability.
+- API failures must use the standard error envelope with code, message, status, path, timestamp, and request id.
+- Unknown request fields are rejected by the global validation pipe.
+- RBAC failures must return explicit `403 Forbidden` responses.
+- Critical player and studio flows must remain covered by the integration-style test suite.
+- Health output must expose request/error counts and p95 duration for baseline diagnosis.
+
 ## Secret and environment handling
 - Never commit real secrets.
 - Use `.env.example` as contract only.

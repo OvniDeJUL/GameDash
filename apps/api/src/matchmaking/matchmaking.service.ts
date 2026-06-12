@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import type {
   GameMode,
@@ -64,7 +64,10 @@ const RANK_CONFIGS: RankConfig[] = [
 
 @Injectable()
 export class MatchmakingService {
-  constructor(private readonly progressionService = new ProgressionService()) {}
+  constructor(
+    @Inject(ProgressionService)
+    private readonly progressionService = new ProgressionService()
+  ) {}
 
   private readonly queues = new Map<GameMode, QueueEntry[]>();
   private readonly statuses = new Map<string, PlayerStatus>();

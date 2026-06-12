@@ -41,6 +41,13 @@ Status: done
 - Realtime: event catalog namespaces and fallback docs.
 - Contracts: admin summary and moderation DTOs.
 
+## Slice 7 - Quality and security hardening
+Status: done
+- API: request-id middleware, standard error envelope, enriched health response.
+- Schema: runtime event baseline for future durable observability.
+- Tests: critical cross-service flow coverage and observability coverage.
+- Docs: hardening notes, permission/logging review, and performance baseline.
+
 ## Definition of done for every slice
 - OpenAPI updated.
 - Prisma schema updated.

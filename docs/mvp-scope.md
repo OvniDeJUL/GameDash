@@ -40,6 +40,12 @@
 - Studio settings for matchmaking, MMR, and economy tuning.
 - Moderation actions for accounts and maps with signals and history.
 
+### Quality and security hardening
+- Critical player and studio flows are covered by an integration-style test.
+- API errors use a standard response envelope with request ids.
+- Health output exposes runtime checks, request/error counts, uptime, and p95 duration.
+- Runtime observability has a Prisma persistence target through `RuntimeEvent`.
+
 ## Explicit non-goals (phase 0 foundation)
 - Full gameplay integration.
 - Real payment processing.
@@ -84,6 +90,10 @@
 - Admin baseline route exists.
 - Moderation/sanction entities exist in Prisma schema.
 - Phase 6 baseline includes studio KPIs, settings read/update, account/map moderation actions, moderation signals/history, staff/admin route protection, and audit entries for settings/moderation actions.
+
+### Quality/security
+- Phase 7 baseline includes consistent error responses, request-id propagation, runtime health metrics, explicit forbidden responses, and critical integration coverage.
+- Baseline performance bottlenecks and production follow-ups are documented.
 
 ### Cross-cutting
 - OpenAPI passes lint.

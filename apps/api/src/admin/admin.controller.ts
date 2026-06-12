@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import type {
   AccountModerationRequest,
   AdminDashboardSummary,
@@ -18,7 +18,10 @@ import { AdminService } from "./admin.service";
 @Controller("admin")
 @UseGuards(AuthGuard, RolesGuard)
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    @Inject(AdminService)
+    private readonly adminService: AdminService
+  ) {}
 
   @Get("dashboard")
   @Roles("staff", "admin")

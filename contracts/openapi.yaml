@@ -625,6 +625,8 @@ paths:
                 $ref: "#/components/schemas/AdminDashboardSummary"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /admin/settings:
     get:
       operationId: getStudioSettings
@@ -639,6 +641,8 @@ paths:
                 $ref: "#/components/schemas/StudioSettingsResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
     patch:
       operationId: updateStudioSettings
       tags: [Admin]
@@ -658,6 +662,8 @@ paths:
                 $ref: "#/components/schemas/StudioSettingsResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /admin/moderation/signals:
     get:
       operationId: getModerationSignals
@@ -674,6 +680,8 @@ paths:
                   $ref: "#/components/schemas/ModerationSignalResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /admin/moderation/history:
     get:
       operationId: getModerationHistory
@@ -690,6 +698,8 @@ paths:
                   $ref: "#/components/schemas/ModerationActionResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /admin/moderation/accounts/{userId}/actions:
     post:
       operationId: moderateAccount
@@ -716,6 +726,8 @@ paths:
                 $ref: "#/components/schemas/ModerationActionResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /admin/moderation/maps/{mapId}/actions:
     post:
       operationId: moderateMap
@@ -738,6 +750,8 @@ paths:
                 $ref: "#/components/schemas/ModerationActionResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 components:
   securitySchemes:
     bearerAuth:
@@ -778,17 +792,95 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Authenticated user does not have the required role.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
   schemas:
     HealthResponse:
       type: object
-      required: [status, time]
+      required: [status, time, version, uptimeSeconds, checks, observability]
       properties:
         status:
           type: string
+          enum: [ok, degraded]
           example: ok
         time:
           type: string
           format: date-time
+        version:
+          type: string
+          example: 0.1.0
+        uptimeSeconds:
+          type: integer
+          minimum: 0
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/HealthCheckResponse"
+        observability:
+          $ref: "#/components/schemas/ObservabilitySnapshotResponse"
+    HealthCheckResponse:
+      type: object
+      required: [name, status]
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [ok, degraded]
+        detail:
+          type: string
+    ObservabilityErrorResponse:
+      type: object
+      required: [method, path, statusCode, code, message, requestId, occurredAt]
+      properties:
+        method:
+          type: string
+        path:
+          type: string
+        statusCode:
+          type: integer
+        code:
+          type: string
+        message:
+          type: string
+        requestId:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+    ObservabilitySnapshotResponse:
+      type: object
+      required: [startedAt, uptimeSeconds, requestCount, errorCount, criticalErrorCount, p95DurationMs, recentErrors]
+      properties:
+        startedAt:
+          type: string
+          format: date-time
+        uptimeSeconds:
+          type: integer
+          minimum: 0
+        requestCount:
+          type: integer
+          minimum: 0
+        errorCount:
+          type: integer
+          minimum: 0
+        criticalErrorCount:
+          type: integer
+          minimum: 0
+        lastRequestAt:
+          type: string
+          format: date-time
+        p95DurationMs:
+          type: integer
+          minimum: 0
+        recentErrors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ObservabilityErrorResponse"
     Role:
       type: string
       enum: [player, staff, admin]
@@ -1686,9 +1778,24 @@ components:
           format: date-time
     ErrorResponse:
       type: object
-      required: [error, message]
+      required: [error]
       properties:
         error:
-          type: string
-        message:
-          type: string
+          type: object
+          required: [code, message, statusCode, timestamp, path, requestId]
+          properties:
+            code:
+              type: string
+              example: bad_request
+            message:
+              type: string
+            statusCode:
+              type: integer
+            timestamp:
+              type: string
+              format: date-time
+            path:
+              type: string
+              example: /api/v1/auth/login
+            requestId:
+              type: string

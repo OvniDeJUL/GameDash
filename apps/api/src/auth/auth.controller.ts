@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Inject,
   Post,
   UseGuards
 } from "@nestjs/common";
@@ -22,7 +23,10 @@ import type { AuthenticatedUser } from "./auth.types";
 
 @Controller("auth")
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    @Inject(AuthService)
+    private readonly authService: AuthService
+  ) {}
 
   @Post("register")
   register(@Body() body: RegisterRequest): AuthTokensResponse {

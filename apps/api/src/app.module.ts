@@ -20,6 +20,7 @@ import {
   PlayerStatusGateway
 } from "./realtime/realtime.gateway";
 import { RolesGuard } from "./auth/roles.guard";
+import { ObservabilityService } from "./observability/observability.service";
 
 @Module({
   imports: [],
@@ -40,6 +41,7 @@ import { RolesGuard } from "./auth/roles.guard";
     ProgressionService,
     EconomyService,
     MapsService,
+    ObservabilityService,
     AuthGuard,
     RolesGuard,
     MatchmakingGateway,

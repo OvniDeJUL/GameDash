@@ -445,3 +445,17 @@ model AuditLog {
 
   @@index([action, createdAt])
 }
+
+model RuntimeEvent {
+  id        String   @id @default(uuid())
+  level     String
+  source    String
+  message   String
+  requestId String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([level, createdAt])
+  @@index([source, createdAt])
+  @@index([requestId])
+}

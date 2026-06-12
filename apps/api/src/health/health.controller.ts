@@ -1,12 +1,16 @@
-import { Controller, Get } from "@nestjs/common";
+import { Controller, Get, Inject } from "@nestjs/common";
+import type { HealthResponse } from "@gamedash/contracts";
+import { ObservabilityService } from "../observability/observability.service";
 
 @Controller("health")
 export class HealthController {
+  constructor(
+    @Inject(ObservabilityService)
+    private readonly observabilityService: ObservabilityService
+  ) {}
+
   @Get()
-  getHealth() {
-    return {
-      status: "ok",
-      time: new Date().toISOString()
-    };
+  getHealth(): HealthResponse {
+    return this.observabilityService.getHealth();
   }
 }

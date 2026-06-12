@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Post, Query, UseGuards } from "@nestjs/common";
 import type {
   CreateMapRequest,
   CreateMapVersionRequest,
@@ -21,7 +21,10 @@ import { MapsService } from "./maps.service";
 @Controller("maps")
 @UseGuards(AuthGuard)
 export class MapsController {
-  constructor(private readonly mapsService: MapsService) {}
+  constructor(
+    @Inject(MapsService)
+    private readonly mapsService: MapsService
+  ) {}
 
   @Get()
   listMaps(

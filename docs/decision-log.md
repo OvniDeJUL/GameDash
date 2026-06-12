@@ -36,3 +36,7 @@
 - Studio settings cover matchmaking queue tuning, MMR deltas, and economy purchase/balance controls.
 - Settings writes are admin-only; moderation actions are available to staff and admin.
 - Moderation history is append-only in the runtime baseline.
+- Phase 7 standardizes API error responses with request ids and records request/error metrics in memory for MVP observability.
+- Phase 7 health output is the primary runtime diagnostic surface until a production log sink is introduced.
+- Phase 7 keeps critical-flow integration coverage at service composition level while persistence remains in-memory.
+- Phase 7 adds a `RuntimeEvent` schema target for future durable observability without wiring database writes yet.

@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Inject, Param, Post, UseGuards } from "@nestjs/common";
 import type {
   MatchResultRequest,
   MatchResultResponse
@@ -11,7 +11,10 @@ import { MatchmakingService } from "../matchmaking/matchmaking.service";
 @Controller("matches")
 @UseGuards(AuthGuard)
 export class MatchesController {
-  constructor(private readonly matchmakingService: MatchmakingService) {}
+  constructor(
+    @Inject(MatchmakingService)
+    private readonly matchmakingService: MatchmakingService
+  ) {}
 
   @Post(":matchId/result")
   submitResult(
