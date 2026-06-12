@@ -55,6 +55,13 @@ Status: done
 - Validation: mandatory suite documented as the final Go/No-Go gate.
 - Demo: live sequence and fallback plan documented.
 
+## Slice 9 - Final review and grading readiness
+Status: done
+- Docs: phase 9 final review scorecard and grade-risk answers.
+- Docs: requirements traceability matrix from cahier des charges expectations to repository evidence.
+- Docs: next iteration plan with prioritized acceptance criteria.
+- Delivery: final package index and defense flow updated.
+
 ## Definition of done for every slice
 - OpenAPI updated.
 - Prisma schema updated.

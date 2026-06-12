@@ -1,7 +1,7 @@
 # Roadmap GameDash (A -> Z)
 
 ## Vision de delivery
-Livrer un MVP jouable et administrable en 8 phases, avec validation continue.
+Livrer un MVP jouable et administrable en 9 phases, avec validation continue et dossier final defensible.
 
 ## Execution companion docs
 - This roadmap is the source of truth for phase scope and ordering.
@@ -94,6 +94,16 @@ Livrer un MVP jouable et administrable en 8 phases, avec validation continue.
 **Sortie attendue**
 - Dossier final complet + demo live.
 
+## Phase 9 - Finition notation et prochaine iteration (Semaine 13)
+- Analyser le cahier des charges, les attentes de notation et les livrables.
+- Produire une matrice de tracabilite exigences -> preuves.
+- Identifier les derniers risques pour la note et les reponses jury.
+- Formaliser la prochaine iteration priorisee.
+
+**Sortie attendue**
+- Dossier de revue finale pret pour le jury.
+- Plan de prochaine iteration actionnable sans derive de scope.
+
 ## Repartition proposee (alignement cahier des charges)
 - Etudiant 1: Backend Auth + Matchmaking/MMR.
 - Etudiant 2: Frontend Joueur + UX mobile first.
@@ -104,3 +114,4 @@ Livrer un MVP jouable et administrable en 8 phases, avec validation continue.
 - J2 (fin Phase 4): boucle economique fonctionnelle.
 - J3 (fin Phase 6): boucle studio complete.
 - J4 (fin Phase 8): documentation + demo pretes.
+- J5 (fin Phase 9): preuves, risques restants et prochaine iteration prets.

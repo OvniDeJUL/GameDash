@@ -17,13 +17,16 @@ GameDash is a unified platform for a competitive online game with community map 
 - Realtime baseline: WebSocket namespaces + polling fallback
 
 ## Current milestone
-Phase 8: final delivery package and live demo readiness.
+Phase 9: final review, grading readiness, and next iteration planning.
 
 Start here for the final review:
 - `docs/final-delivery.md`
+- `docs/phase-9-final-review.md`
+- `docs/requirements-traceability-matrix.md`
 - `docs/demo-guide.md`
 - `docs/technical-handbook.md`
 - `docs/business-viability-checklist.md`
+- `docs/next-iteration-plan.md`
 
 ## Repository layout
 - `apps/web`: player/studio frontend shell

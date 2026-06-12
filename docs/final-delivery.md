@@ -2,11 +2,11 @@
 
 ## Purpose
 
-This document is the entrypoint for the phase 8 delivery package. It links the technical, user, demo, and business material required for the final review.
+This document is the entrypoint for the final delivery package. It links the technical, user, demo, business, and grading-readiness material required for the final review.
 
 ## Delivery status
 
-- Roadmap phase: Phase 8 - Livraison et soutenance.
+- Roadmap phase: Phase 9 - Finition notation et prochaine iteration.
 - MVP state: demonstrable end-to-end baseline.
 - Validation gate: build, lint, typecheck, tests, OpenAPI validation, and Prisma validation must be green before the demo.
 - Runtime scope: in-memory MVP services backed by Prisma/OpenAPI contracts for the production persistence target.
@@ -25,6 +25,9 @@ This document is the entrypoint for the phase 8 delivery package. It links the t
 | Demo and video script | `docs/demo-guide.md` |
 | Defense runbook | `docs/soutenance-runbook.md` |
 | Business viability | `docs/business-viability-checklist.md` |
+| Final review and grading readiness | `docs/phase-9-final-review.md` |
+| Requirements traceability | `docs/requirements-traceability-matrix.md` |
+| Next implementation iteration | `docs/next-iteration-plan.md` |
 | Risks and decisions | `docs/risk-register.md`, `docs/decision-log.md` |
 
 ## Demo readiness checklist
@@ -48,4 +51,5 @@ This document is the entrypoint for the phase 8 delivery package. It links the t
 3. Open the web app and walk through the visible player and studio surfaces.
 4. Use `docs/demo-guide.md` for the live demo sequence.
 5. Use `docs/technical-handbook.md` for API, database, security, and setup questions.
-6. Finish with `docs/business-viability-checklist.md` to show product viability and next steps.
+6. Use `docs/requirements-traceability-matrix.md` to answer cahier des charges coverage questions.
+7. Finish with `docs/business-viability-checklist.md` and `docs/next-iteration-plan.md` to show product viability and next steps.

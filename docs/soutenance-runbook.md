@@ -30,6 +30,8 @@ corepack pnpm validate:prisma
 - `docs/demo-guide.md`
 - `docs/technical-handbook.md`
 - `docs/business-viability-checklist.md`
+- `docs/phase-9-final-review.md`
+- `docs/requirements-traceability-matrix.md`
 
 ## Start the demo
 
@@ -64,6 +66,7 @@ http://localhost:3001/api/v1/health
 - Security: RBAC, hashed passwords, refresh rotation, audit logs, standard errors.
 - Quality: mandatory validation suite, critical-flow tests, observability.
 - Business: progression, economy, UGC, moderation, operational controls.
+- Traceability: each cahier des charges expectation has a repository proof and a validation path.
 
 ## Expected questions and short answers
 
@@ -87,6 +90,10 @@ OpenAPI and shared TypeScript DTOs are maintained together. `validate:openapi`, 
 
 Use `x-request-id`, the standard error envelope, `GET /api/v1/health`, runtime metrics, audit logs, and the documented performance baseline.
 
+### What remains after the MVP?
+
+Persistence wiring, CI/CD, browser E2E tests, connected role-aware UI, durable observability, and deployment preparation. These are prioritized in `docs/next-iteration-plan.md`.
+
 ## Emergency fallback
 
 If local runtime fails:
@@ -96,3 +103,4 @@ If local runtime fails:
 3. Show `prisma/schema.prisma`.
 4. Show `apps/api/src/quality/critical-flows.spec.ts`.
 5. Continue with `docs/demo-guide.md`.
+6. Use `docs/requirements-traceability-matrix.md` to keep the defense evidence-driven.

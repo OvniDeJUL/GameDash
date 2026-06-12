@@ -138,3 +138,14 @@ Pass when all of the following are true:
 - demo script or demo guide exists
 - business viability checklist exists
 - the repository is in a demonstrable state with the validation suite green
+
+## Phase 9 gate - Finition notation et prochaine iteration
+
+Pass when all of the following are true:
+
+- final review material maps cahier des charges expectations to repository evidence
+- a requirements traceability matrix exists
+- remaining grade risks are explicit and paired with defense answers
+- the next implementation iteration is prioritized with acceptance criteria
+- `docs/final-delivery.md` links the phase 9 evidence package
+- the repository remains in a demonstrable state with the validation suite green

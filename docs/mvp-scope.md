@@ -103,6 +103,7 @@
 
 ### Delivery/soutenance
 - Phase 8 baseline includes `docs/final-delivery.md`, `docs/technical-handbook.md`, `docs/user-guide.md`, `docs/demo-guide.md`, `docs/soutenance-runbook.md`, and `docs/business-viability-checklist.md`.
+- Phase 9 baseline adds final review evidence through `docs/phase-9-final-review.md`, `docs/requirements-traceability-matrix.md`, and `docs/next-iteration-plan.md`.
 - Final demo readiness depends on the full mandatory validation suite being green.
 
 ### Cross-cutting

@@ -43,3 +43,5 @@
 - Phase 8 final delivery starts from `docs/final-delivery.md` and links technical, user, demo, runbook, and business viability material.
 - Phase 8 keeps the MVP runtime scope unchanged: demonstrable in-memory services with OpenAPI and Prisma as production contract baselines.
 - Phase 8 uses the mandatory validation suite as the final Go/No-Go criterion for the defense.
+- Phase 9 adds final review evidence without changing runtime scope: grading readiness, requirements traceability, and the next implementation iteration.
+- Phase 9 identifies persistence, CI/CD, E2E browser tests, connected role-aware UI, and durable observability as the next highest-value production steps.

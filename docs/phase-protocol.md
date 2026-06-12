@@ -22,6 +22,8 @@ If two documents disagree, `docs/03-roadmap-gamedash.md` wins for scope and orde
 - `/phase 1`
 - `/phase8`
 - `/phase 8`
+- `/phase9`
+- `/phase 9`
 
 Any such prompt means: execute the requested roadmap phase end-to-end under this protocol.
 
