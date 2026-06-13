@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import type {
   AccountModerationRequest,
@@ -10,228 +10,217 @@ import type {
   UpdateStudioSettingsRequest
 } from "@gamedash/contracts";
 import type { AuthenticatedUser } from "../auth/auth.types";
-
-interface AdminAuditEntry {
-  id: string;
-  actorId: string;
-  action: string;
-  targetType: string;
-  targetId?: string;
-  metadata?: Record<string, unknown>;
-  createdAt: string;
-}
+import { PrismaService } from "../prisma/prisma.service";
 
 const DEFAULT_SETTINGS: StudioSettingsResponse = {
-  matchmaking: {
-    rankedQueueMaxWaitSeconds: 90,
-    funQueueMaxWaitSeconds: 45,
-    matchSize: 2
-  },
-  mmr: {
-    placementMmr: 1000,
-    rankedWinDelta: 32,
-    rankedLossDelta: -24,
-    unrankedWinDelta: 10,
-    unrankedLossDelta: -8
-  },
-  economy: {
-    starterSoftBalance: 1000,
-    starterHardBalance: 20,
-    purchaseEnabled: true,
-    refundWindowHours: 24
-  },
+  matchmaking: { rankedQueueMaxWaitSeconds: 90, funQueueMaxWaitSeconds: 45, matchSize: 2 },
+  mmr: { placementMmr: 1000, rankedWinDelta: 32, rankedLossDelta: -24, unrankedWinDelta: 10, unrankedLossDelta: -8 },
+  economy: { starterSoftBalance: 1000, starterHardBalance: 20, purchaseEnabled: true, refundWindowHours: 24 },
   updatedAt: new Date(0).toISOString()
 };
 
 @Injectable()
 export class AdminService {
-  private settings: StudioSettingsResponse = { ...DEFAULT_SETTINGS };
-  private readonly moderationActions: ModerationActionResponse[] = [];
-  private readonly moderationSignals: ModerationSignalResponse[] = [
-    {
-      id: "sig_map_report_spam",
-      targetType: "map",
-      targetId: "map_reported_spam",
-      reason: "Repeated low-quality map reports",
-      status: "open",
-      source: "map_report",
-      createdAt: new Date(0).toISOString()
-    },
-    {
-      id: "sig_account_abuse",
-      targetType: "account",
-      targetId: "usr_reported_abuse",
-      reason: "Multiple player reports in ranked queue",
-      status: "open",
-      source: "player_report",
-      createdAt: new Date(0).toISOString()
-    }
-  ];
-  private readonly auditLogs: AdminAuditEntry[] = [];
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  getDashboard(): AdminDashboardSummary {
+  async getDashboard(): Promise<AdminDashboardSummary> {
+    const now = new Date();
+    const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const [activePlayers, dailyMatches, virtualRevenue, mapActivity, openSignals, activeSanctions, lastSettings] =
+      await Promise.all([
+        this.prisma.user.count(),
+        this.prisma.match.count({ where: { startedAt: { gte: dayAgo } } }),
+        this.prisma.transaction.aggregate({
+          _sum: { amount: true },
+          where: { status: "ACCEPTED", createdAt: { gte: dayAgo } }
+        }),
+        this.prisma.mapTest.count({ where: { createdAt: { gte: dayAgo } } }),
+        this.prisma.moderationSignal.count({ where: { status: "open" } }),
+        this.prisma.sanction.count({ where: { status: "active" } }),
+        this.prisma.studioSetting.findUnique({ where: { key: "__meta" } })
+      ]);
+
     return {
-      activePlayers: 1200,
-      dailyMatches: 9800,
-      virtualRevenue: 45200,
-      mapActivity: 310,
-      openModerationSignals: this.moderationSignals.filter((signal) => signal.status === "open").length,
-      activeSanctions: this.moderationActions.filter((action) =>
-        action.action === "account.suspend" || action.action === "account.ban"
-      ).length,
-      settingsLastUpdated: this.settings.updatedAt
+      activePlayers,
+      dailyMatches,
+      virtualRevenue: virtualRevenue._sum.amount ?? 0,
+      mapActivity,
+      openModerationSignals: openSignals,
+      activeSanctions,
+      settingsLastUpdated: lastSettings
+        ? (lastSettings.value as { updatedAt: string }).updatedAt
+        : DEFAULT_SETTINGS.updatedAt
     };
   }
 
-  getSettings(): StudioSettingsResponse {
-    return this.cloneSettings();
+  async getSettings(): Promise<StudioSettingsResponse> {
+    return this.loadSettings();
   }
 
-  updateSettings(actor: AuthenticatedUser, body: UpdateStudioSettingsRequest): StudioSettingsResponse {
-    const nextSettings: StudioSettingsResponse = {
-      matchmaking: {
-        ...this.settings.matchmaking,
-        ...body.matchmaking
-      },
-      mmr: {
-        ...this.settings.mmr,
-        ...body.mmr
-      },
-      economy: {
-        ...this.settings.economy,
-        ...body.economy
-      },
+  async updateSettings(actor: AuthenticatedUser, body: UpdateStudioSettingsRequest): Promise<StudioSettingsResponse> {
+    const current = await this.loadSettings();
+    const next: StudioSettingsResponse = {
+      matchmaking: { ...current.matchmaking, ...body.matchmaking },
+      mmr: { ...current.mmr, ...body.mmr },
+      economy: { ...current.economy, ...body.economy },
       updatedAt: new Date().toISOString(),
       updatedBy: actor.id
     };
-    this.assertSettings(nextSettings);
+    this.assertSettings(next);
 
-    this.settings = nextSettings;
-    this.audit(actor.id, "admin.settings.update", "studio_settings", "global", {
-      sections: Object.keys(body)
+    await Promise.all([
+      this.prisma.studioSetting.upsert({
+        where: { key: "matchmaking" },
+        create: { key: "matchmaking", value: next.matchmaking as never, updatedById: actor.id },
+        update: { value: next.matchmaking as never, updatedById: actor.id }
+      }),
+      this.prisma.studioSetting.upsert({
+        where: { key: "mmr" },
+        create: { key: "mmr", value: next.mmr as never, updatedById: actor.id },
+        update: { value: next.mmr as never, updatedById: actor.id }
+      }),
+      this.prisma.studioSetting.upsert({
+        where: { key: "economy" },
+        create: { key: "economy", value: next.economy as never, updatedById: actor.id },
+        update: { value: next.economy as never, updatedById: actor.id }
+      }),
+      this.prisma.studioSetting.upsert({
+        where: { key: "__meta" },
+        create: { key: "__meta", value: { updatedAt: next.updatedAt, updatedBy: actor.id }, updatedById: actor.id },
+        update: { value: { updatedAt: next.updatedAt, updatedBy: actor.id }, updatedById: actor.id }
+      })
+    ]);
+
+    await this.prisma.auditLog.create({
+      data: { actorId: actor.id, action: "admin.settings.update", targetType: "studio_settings", targetId: "global", metadata: { sections: Object.keys(body) } as never }
     });
 
-    return this.cloneSettings();
+    return next;
   }
 
-  moderateAccount(
+  async moderateAccount(
     actor: AuthenticatedUser,
     targetUserId: string,
     body: AccountModerationRequest
-  ): ModerationActionResponse {
+  ): Promise<ModerationActionResponse> {
     const reason = this.assertReason(body.reason);
-    if (body.durationHours !== undefined && body.durationHours < 0) {
-      throw new BadRequestException("Moderation duration cannot be negative.");
-    }
     const action = `account.${body.action}`;
-    const createdAt = new Date().toISOString();
-    const expiresAt =
-      body.durationHours && body.durationHours > 0
-        ? new Date(Date.now() + body.durationHours * 60 * 60 * 1000).toISOString()
-        : undefined;
-    const response: ModerationActionResponse = {
-      id: randomUUID(),
-      targetType: "account",
-      targetId: targetUserId,
-      action,
-      reason,
-      actorId: actor.id,
-      createdAt,
-      expiresAt
-    };
-    this.moderationActions.unshift(response);
-    this.audit(actor.id, "admin.moderation.account", "account", targetUserId, {
-      action,
-      reason,
-      expiresAt
+    const expiresAt = body.durationHours && body.durationHours > 0
+      ? new Date(Date.now() + body.durationHours * 3_600_000)
+      : undefined;
+
+    const record = await this.prisma.moderationHistory.create({
+      data: {
+        actorId: actor.id,
+        targetType: "account",
+        targetId: targetUserId,
+        action,
+        reason,
+        expiresAt,
+        metadata: { durationHours: body.durationHours }
+      }
     });
 
-    return response;
+    if (body.action === "suspend" || body.action === "ban") {
+      await this.prisma.sanction.create({
+        data: {
+          userId: targetUserId,
+          actorId: actor.id,
+          type: body.action === "ban" ? "BAN" : "SUSPENSION",
+          reason,
+          status: "active",
+          endsAt: expiresAt
+        }
+      });
+    }
+
+    await this.prisma.auditLog.create({
+      data: { actorId: actor.id, action: "admin.moderation.account", targetType: "account", targetId: targetUserId, metadata: { action, reason } as never }
+    });
+
+    return { id: record.id, targetType: "account", targetId: targetUserId, action, reason, actorId: actor.id, createdAt: record.createdAt.toISOString(), expiresAt: expiresAt?.toISOString() };
   }
 
-  moderateMap(
+  async moderateMap(
     actor: AuthenticatedUser,
     mapId: string,
     body: MapModerationRequest
-  ): ModerationActionResponse {
+  ): Promise<ModerationActionResponse> {
     const reason = this.assertReason(body.reason);
     const action = `map.${body.action}`;
-    const response: ModerationActionResponse = {
-      id: randomUUID(),
-      targetType: "map",
-      targetId: mapId,
-      action,
-      reason,
-      actorId: actor.id,
-      createdAt: new Date().toISOString()
-    };
-    this.moderationActions.unshift(response);
-    this.audit(actor.id, "admin.moderation.map", "map", mapId, {
-      action,
-      reason
+
+    if (body.action === "hide") {
+      await this.prisma.gameMap.update({ where: { id: mapId }, data: { status: "HIDDEN", lastModerationAt: new Date() } });
+    } else if (body.action === "restore") {
+      await this.prisma.gameMap.update({ where: { id: mapId }, data: { status: "STABLE", lastModerationAt: new Date() } });
+    }
+
+    const record = await this.prisma.moderationHistory.create({
+      data: { actorId: actor.id, targetType: "map", targetId: mapId, action, reason }
     });
 
-    return response;
+    await this.prisma.auditLog.create({
+      data: { actorId: actor.id, action: "admin.moderation.map", targetType: "map", targetId: mapId, metadata: { action, reason } as never }
+    });
+
+    return { id: record.id, targetType: "map", targetId: mapId, action, reason, actorId: actor.id, createdAt: record.createdAt.toISOString() };
   }
 
-  getModerationHistory(): ModerationActionResponse[] {
-    return [...this.moderationActions];
+  async getModerationHistory(): Promise<ModerationActionResponse[]> {
+    const records = await this.prisma.moderationHistory.findMany({ orderBy: { createdAt: "desc" } });
+    return records.map((r) => ({
+      id: r.id,
+      targetType: r.targetType as "account" | "map",
+      targetId: r.targetId,
+      action: r.action,
+      reason: r.reason,
+      actorId: r.actorId,
+      createdAt: r.createdAt.toISOString(),
+      expiresAt: r.expiresAt?.toISOString()
+    }));
   }
 
-  getModerationSignals(): ModerationSignalResponse[] {
-    return [...this.moderationSignals];
+  async getModerationSignals(): Promise<ModerationSignalResponse[]> {
+    const signals = await this.prisma.moderationSignal.findMany({ orderBy: { createdAt: "desc" } });
+    return signals.map((s) => ({
+      id: s.id,
+      targetType: s.targetType as "account" | "map",
+      targetId: s.targetId,
+      reason: s.reason,
+      status: s.status as "open" | "reviewed" | "dismissed",
+      source: s.source,
+      createdAt: s.createdAt.toISOString()
+    }));
   }
 
-  getAuditLogs(): AdminAuditEntry[] {
-    return [...this.auditLogs];
-  }
+  // ─── Private helpers ──────────────────────────────────────────────────────
 
-  private cloneSettings(): StudioSettingsResponse {
+  private async loadSettings(): Promise<StudioSettingsResponse> {
+    const rows = await this.prisma.studioSetting.findMany({ where: { key: { in: ["matchmaking", "mmr", "economy", "__meta"] } } });
+    const byKey = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    const meta = byKey["__meta"] as { updatedAt?: string; updatedBy?: string } | undefined;
+
     return {
-      matchmaking: { ...this.settings.matchmaking },
-      mmr: { ...this.settings.mmr },
-      economy: { ...this.settings.economy },
-      updatedAt: this.settings.updatedAt,
-      updatedBy: this.settings.updatedBy
+      matchmaking: (byKey["matchmaking"] as unknown as StudioSettingsResponse["matchmaking"]) ?? DEFAULT_SETTINGS.matchmaking,
+      mmr: (byKey["mmr"] as unknown as StudioSettingsResponse["mmr"]) ?? DEFAULT_SETTINGS.mmr,
+      economy: (byKey["economy"] as unknown as StudioSettingsResponse["economy"]) ?? DEFAULT_SETTINGS.economy,
+      updatedAt: meta?.updatedAt ?? DEFAULT_SETTINGS.updatedAt,
+      updatedBy: meta?.updatedBy
     };
   }
 
   private assertReason(reason: string): string {
     const normalized = reason.trim();
-    if (!normalized) {
-      throw new BadRequestException("Moderation reason is required.");
-    }
-
+    if (!normalized) throw new BadRequestException("Moderation reason is required.");
     return normalized;
   }
 
   private assertSettings(settings: StudioSettingsResponse): void {
-    if (settings.matchmaking.matchSize < 2) {
-      throw new BadRequestException("Match size must be at least 2.");
-    }
+    if (settings.matchmaking.matchSize < 2) throw new BadRequestException("Match size must be at least 2.");
     if (settings.economy.starterSoftBalance < 0 || settings.economy.starterHardBalance < 0) {
       throw new BadRequestException("Starter balances cannot be negative.");
     }
-    if (settings.economy.refundWindowHours < 0) {
-      throw new BadRequestException("Refund window cannot be negative.");
-    }
-  }
-
-  private audit(
-    actorId: string,
-    action: string,
-    targetType: string,
-    targetId?: string,
-    metadata?: Record<string, unknown>
-  ): void {
-    this.auditLogs.push({
-      id: randomUUID(),
-      actorId,
-      action,
-      targetType,
-      targetId,
-      metadata,
-      createdAt: new Date().toISOString()
-    });
+    if (settings.economy.refundWindowHours < 0) throw new BadRequestException("Refund window cannot be negative.");
   }
 }

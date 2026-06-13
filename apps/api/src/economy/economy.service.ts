@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import type {
   CurrencyType,
@@ -10,27 +10,12 @@ import type {
   WalletResponse
 } from "@gamedash/contracts";
 import type { AuthenticatedUser } from "../auth/auth.types";
-
-interface WalletState {
-  playerId: string;
-  softBalance: number;
-  hardBalance: number;
-  updatedAt: string;
-}
-
-interface EconomyAuditEntry {
-  id: string;
-  actorId: string;
-  action: string;
-  targetType: string;
-  targetId?: string;
-  metadata?: Record<string, unknown>;
-  createdAt: string;
-}
+import { PrismaService } from "../prisma/prisma.service";
 
 const INITIAL_SOFT_BALANCE = 1000;
 const INITIAL_HARD_BALANCE = 20;
 
+/** Store catalog stays hardcoded — would move to DB for live-ops price changes. */
 const STORE_ITEMS: StoreItem[] = [
   {
     id: "item_starter_skin",
@@ -66,218 +51,234 @@ const STORE_ITEMS: StoreItem[] = [
 
 @Injectable()
 export class EconomyService {
-  private readonly wallets = new Map<string, WalletState>();
-  private readonly inventory = new Map<string, Map<string, InventoryItemResponse>>();
-  private readonly transactions = new Map<string, TransactionResponse[]>();
-  private readonly auditLogs: EconomyAuditEntry[] = [];
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   listStoreItems(): StoreItem[] {
-    return STORE_ITEMS.filter((item) => item.active).sort((a, b) => a.sortOrder - b.sortOrder);
+    return STORE_ITEMS.filter((i) => i.active).sort((a, b) => a.sortOrder - b.sortOrder);
   }
 
-  getWallet(actor: AuthenticatedUser): WalletResponse {
-    return this.toWalletResponse(this.ensureWallet(actor.id));
+  async getWallet(actor: AuthenticatedUser): Promise<WalletResponse> {
+    const wallet = await this.ensureWallet(actor.id);
+    return this.toWalletResponse(actor.id, wallet);
   }
 
-  getInventory(actor: AuthenticatedUser): InventoryItemResponse[] {
-    return [...this.ensureInventory(actor.id).values()].sort((a, b) => a.itemCode.localeCompare(b.itemCode));
+  async getInventory(actor: AuthenticatedUser): Promise<InventoryItemResponse[]> {
+    const items = await this.prisma.inventoryItem.findMany({
+      where: { userId: actor.id },
+      orderBy: { itemCode: "asc" }
+    });
+    return items.map((i) => ({
+      id: i.id,
+      playerId: i.userId,
+      itemCode: i.itemCode,
+      name: i.name,
+      quantity: i.quantity,
+      equipped: i.equipped,
+      updatedAt: i.updatedAt.toISOString()
+    }));
   }
 
-  getTransactions(actor: AuthenticatedUser): TransactionResponse[] {
-    return [...(this.transactions.get(actor.id) ?? [])];
+  async getTransactions(actor: AuthenticatedUser): Promise<TransactionResponse[]> {
+    const txs = await this.prisma.transaction.findMany({
+      where: { userId: actor.id },
+      orderBy: { createdAt: "desc" }
+    });
+    return txs.map(this.toTransactionResponse);
   }
 
-  purchase(actor: AuthenticatedUser, body: PurchaseRequest): PurchaseResponse {
+  async purchase(actor: AuthenticatedUser, body: PurchaseRequest): Promise<PurchaseResponse> {
     const quantity = this.assertQuantity(body.quantity);
-    const item = STORE_ITEMS.find((storeItem) => storeItem.id === body.storeItemId && storeItem.active);
+    const item = STORE_ITEMS.find((s) => s.id === body.storeItemId && s.active);
+    if (!item) throw new NotFoundException("Store item not found.");
 
-    if (!item) {
-      throw new NotFoundException("Store item not found.");
-    }
-
-    const wallet = this.ensureWallet(actor.id);
-    const createdAt = new Date().toISOString();
+    const wallet = await this.ensureWallet(actor.id);
     const amount = item.price * quantity;
-    const balanceBefore = this.getCurrencyBalance(wallet, item.currencyType);
+    const currencyField = item.currencyType === "soft" ? "softBalance" : "hardBalance";
+    const balanceBefore = currencyField === "softBalance" ? wallet.softBalance : wallet.hardBalance;
+    const createdAt = new Date();
 
     if (balanceBefore < amount) {
-      const transaction = this.recordTransaction(actor.id, {
-        transactionId: randomUUID(),
-        status: "rejected",
-        storeItemId: item.id,
-        itemCode: item.itemCode,
-        currencyType: item.currencyType,
-        unitPrice: item.price,
-        quantity,
-        amount,
-        balanceBefore,
-        balanceAfter: balanceBefore,
-        reason: "insufficient_funds",
-        createdAt
+      const tx = await this.prisma.transaction.create({
+        data: {
+          userId: actor.id,
+          storeItemId: item.id,
+          itemCode: item.itemCode,
+          currencyType: item.currencyType.toUpperCase() as "SOFT" | "HARD",
+          unitPrice: item.price,
+          quantity,
+          amount,
+          balanceBefore,
+          balanceAfter: balanceBefore,
+          status: "REJECTED",
+          reason: "insufficient_funds",
+          createdAt
+        }
       });
-      this.audit(actor.id, "economy.purchase.rejected", "transaction", transaction.transactionId, {
+      await this.audit(actor.id, "economy.purchase.rejected", "transaction", tx.id, {
         storeItemId: item.id,
-        itemCode: item.itemCode,
-        currencyType: item.currencyType,
         amount,
-        balanceBefore,
-        balanceAfter: balanceBefore,
-        reason: transaction.reason
+        reason: "insufficient_funds"
       });
 
       return {
-        transaction,
-        wallet: this.toWalletResponse(wallet)
+        transaction: this.toTransactionResponse(tx),
+        wallet: this.toWalletResponse(actor.id, wallet)
       };
     }
 
     const balanceAfter = balanceBefore - amount;
-    this.setCurrencyBalance(wallet, item.currencyType, balanceAfter);
-    wallet.updatedAt = createdAt;
-
-    const inventoryItem = this.upsertInventoryItem(actor.id, item, quantity, createdAt);
-    const transaction = this.recordTransaction(actor.id, {
-      transactionId: randomUUID(),
-      status: "accepted",
-      storeItemId: item.id,
-      itemCode: item.itemCode,
-      currencyType: item.currencyType,
-      unitPrice: item.price,
-      quantity,
-      amount,
-      balanceBefore,
-      balanceAfter,
-      createdAt
+    const updatedWallet = await this.prisma.wallet.update({
+      where: { userId: actor.id },
+      data: { [currencyField]: balanceAfter }
     });
-    this.audit(actor.id, "economy.purchase.accepted", "transaction", transaction.transactionId, {
+
+    const [tx, inventoryItem] = await Promise.all([
+      this.prisma.transaction.create({
+        data: {
+          userId: actor.id,
+          storeItemId: item.id,
+          itemCode: item.itemCode,
+          currencyType: item.currencyType.toUpperCase() as "SOFT" | "HARD",
+          unitPrice: item.price,
+          quantity,
+          amount,
+          balanceBefore,
+          balanceAfter,
+          status: "ACCEPTED",
+          createdAt
+        }
+      }),
+      this.upsertInventoryItem(actor.id, item, quantity)
+    ]);
+
+    await this.audit(actor.id, "economy.purchase.accepted", "transaction", tx.id, {
       storeItemId: item.id,
       itemCode: item.itemCode,
-      currencyType: item.currencyType,
       quantity,
       amount,
       balanceBefore,
-      balanceAfter,
-      inventoryItemId: inventoryItem.id
+      balanceAfter
+    });
+
+    const inv: InventoryItemResponse = {
+      id: inventoryItem.id,
+      playerId: actor.id,
+      itemCode: inventoryItem.itemCode,
+      name: inventoryItem.name,
+      quantity: inventoryItem.quantity,
+      equipped: inventoryItem.equipped,
+      updatedAt: inventoryItem.updatedAt.toISOString()
+    };
+
+    return {
+      transaction: this.toTransactionResponse(tx),
+      wallet: this.toWalletResponse(actor.id, updatedWallet),
+      inventoryItem: inv
+    };
+  }
+
+  async equipItem(actor: AuthenticatedUser, itemCode: string): Promise<InventoryItemResponse> {
+    const item = await this.prisma.inventoryItem.findUnique({
+      where: { userId_itemCode: { userId: actor.id, itemCode } }
+    });
+    if (!item) throw new NotFoundException("Item not in inventory.");
+
+    const updated = await this.prisma.inventoryItem.update({
+      where: { id: item.id },
+      data: { equipped: !item.equipped }
     });
 
     return {
-      transaction,
-      wallet: this.toWalletResponse(wallet),
-      inventoryItem
+      id: updated.id,
+      playerId: actor.id,
+      itemCode: updated.itemCode,
+      name: updated.name,
+      quantity: updated.quantity,
+      equipped: updated.equipped,
+      updatedAt: updated.updatedAt.toISOString()
     };
   }
 
-  getAuditLogs(): EconomyAuditEntry[] {
-    return [...this.auditLogs];
+  // ─── Private helpers ──────────────────────────────────────────────────────
+
+  private async ensureWallet(userId: string) {
+    return this.prisma.wallet.upsert({
+      where: { userId },
+      create: { userId, softBalance: INITIAL_SOFT_BALANCE, hardBalance: INITIAL_HARD_BALANCE },
+      update: {}
+    });
   }
 
-  private ensureWallet(playerId: string): WalletState {
-    const existing = this.wallets.get(playerId);
-    if (existing) {
-      return existing;
-    }
-
-    const wallet: WalletState = {
-      playerId,
-      softBalance: INITIAL_SOFT_BALANCE,
-      hardBalance: INITIAL_HARD_BALANCE,
-      updatedAt: new Date().toISOString()
-    };
-    this.wallets.set(playerId, wallet);
-    return wallet;
-  }
-
-  private ensureInventory(playerId: string): Map<string, InventoryItemResponse> {
-    const existing = this.inventory.get(playerId);
-    if (existing) {
-      return existing;
-    }
-
-    const playerInventory = new Map<string, InventoryItemResponse>();
-    this.inventory.set(playerId, playerInventory);
-    return playerInventory;
-  }
-
-  private upsertInventoryItem(
+  private toWalletResponse(
     playerId: string,
-    item: StoreItem,
-    quantity: number,
-    updatedAt: string
-  ): InventoryItemResponse {
-    const inventory = this.ensureInventory(playerId);
-    const existing = inventory.get(item.itemCode);
-
-    if (existing) {
-      existing.quantity += quantity;
-      existing.updatedAt = updatedAt;
-      return existing;
-    }
-
-    const inventoryItem: InventoryItemResponse = {
-      id: randomUUID(),
+    wallet: { softBalance: number; hardBalance: number; updatedAt: Date }
+  ): WalletResponse {
+    return {
       playerId,
-      itemCode: item.itemCode,
-      name: item.name,
-      quantity,
-      equipped: false,
-      updatedAt
+      softBalance: wallet.softBalance,
+      hardBalance: wallet.hardBalance,
+      updatedAt: wallet.updatedAt.toISOString()
     };
-    inventory.set(item.itemCode, inventoryItem);
-    return inventoryItem;
   }
 
-  private recordTransaction(playerId: string, transaction: TransactionResponse): TransactionResponse {
-    const existing = this.transactions.get(playerId) ?? [];
-    existing.unshift(transaction);
-    this.transactions.set(playerId, existing);
-    return transaction;
+  private toTransactionResponse(tx: {
+    id: string;
+    storeItemId: string | null;
+    itemCode: string | null;
+    currencyType: string;
+    unitPrice: number;
+    quantity: number;
+    amount: number;
+    balanceBefore: number;
+    balanceAfter: number;
+    status: string;
+    reason: string | null;
+    createdAt: Date;
+  }): TransactionResponse {
+    return {
+      transactionId: tx.id,
+      status: tx.status.toLowerCase() as "accepted" | "rejected",
+      storeItemId: tx.storeItemId ?? undefined,
+      itemCode: tx.itemCode ?? undefined,
+      currencyType: tx.currencyType.toLowerCase() as CurrencyType,
+      unitPrice: tx.unitPrice,
+      quantity: tx.quantity,
+      amount: tx.amount,
+      balanceBefore: tx.balanceBefore,
+      balanceAfter: tx.balanceAfter,
+      reason: tx.reason ?? undefined,
+      createdAt: tx.createdAt.toISOString()
+    };
+  }
+
+  private async upsertInventoryItem(
+    userId: string,
+    item: StoreItem,
+    quantity: number
+  ) {
+    return this.prisma.inventoryItem.upsert({
+      where: { userId_itemCode: { userId, itemCode: item.itemCode } },
+      create: { userId, itemCode: item.itemCode, name: item.name, quantity },
+      update: { quantity: { increment: quantity } }
+    });
   }
 
   private assertQuantity(quantity: number): number {
     if (!Number.isInteger(quantity) || quantity < 1) {
       throw new BadRequestException("Purchase quantity must be a positive integer.");
     }
-
     return quantity;
   }
 
-  private getCurrencyBalance(wallet: WalletState, currencyType: CurrencyType): number {
-    return currencyType === "soft" ? wallet.softBalance : wallet.hardBalance;
-  }
-
-  private setCurrencyBalance(wallet: WalletState, currencyType: CurrencyType, balance: number): void {
-    if (currencyType === "soft") {
-      wallet.softBalance = balance;
-      return;
-    }
-
-    wallet.hardBalance = balance;
-  }
-
-  private toWalletResponse(wallet: WalletState): WalletResponse {
-    return {
-      playerId: wallet.playerId,
-      softBalance: wallet.softBalance,
-      hardBalance: wallet.hardBalance,
-      updatedAt: wallet.updatedAt
-    };
-  }
-
-  private audit(
+  private async audit(
     actorId: string,
     action: string,
     targetType: string,
     targetId?: string,
     metadata?: Record<string, unknown>
-  ): void {
-    this.auditLogs.push({
-      id: randomUUID(),
-      actorId,
-      action,
-      targetType,
-      targetId,
-      metadata,
-      createdAt: new Date().toISOString()
+  ): Promise<void> {
+    await this.prisma.auditLog.create({
+      data: { actorId, action, targetType, targetId, metadata: metadata as never }
     });
   }
 }

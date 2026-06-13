@@ -1,5 +1,4 @@
-import { Injectable } from "@nestjs/common";
-import { randomUUID } from "crypto";
+import { Inject, Injectable } from "@nestjs/common";
 import type {
   GameMode,
   GrantedLevelReward,
@@ -9,16 +8,9 @@ import type {
   PlayerProgressionResponse,
   ProgressionRulesResponse
 } from "@gamedash/contracts";
+import { PrismaService } from "../prisma/prisma.service";
 
 type MatchOutcome = "win" | "loss" | "draw";
-
-interface ProgressionState {
-  playerId: string;
-  level: number;
-  lifetimeXp: number;
-  rewards: GrantedLevelReward[];
-  updatedAt: string;
-}
 
 interface AwardMatchXpInput {
   playerId: string;
@@ -27,16 +19,6 @@ interface AwardMatchXpInput {
   matchId: string;
   occurredAt: string;
   actorId: string;
-}
-
-interface ProgressionAuditEntry {
-  id: string;
-  actorId: string;
-  action: string;
-  targetType: string;
-  targetId: string;
-  metadata: Record<string, unknown>;
-  createdAt: string;
 }
 
 const BASE_XP_BY_MODE: Record<GameMode, number> = {
@@ -62,89 +44,93 @@ const LEVEL_THRESHOLDS: LevelThreshold[] = [
 ];
 
 const LEVEL_REWARDS: LevelReward[] = [
-  {
-    level: 2,
-    code: "profile_border_copper",
-    label: "Copper profile border",
-    rewardType: "cosmetic"
-  },
-  {
-    level: 3,
-    code: "title_queue_climber",
-    label: "Queue Climber title",
-    rewardType: "title"
-  },
-  {
-    level: 4,
-    code: "soft_currency_250",
-    label: "250 soft currency",
-    rewardType: "soft_currency",
-    quantity: 250
-  },
-  {
-    level: 5,
-    code: "ranked_banner_silver",
-    label: "Silver ranked banner",
-    rewardType: "cosmetic"
-  },
-  {
-    level: 6,
-    code: "soft_currency_500",
-    label: "500 soft currency",
-    rewardType: "soft_currency",
-    quantity: 500
-  }
+  { level: 2, code: "profile_border_copper", label: "Copper profile border", rewardType: "cosmetic" },
+  { level: 3, code: "title_queue_climber", label: "Queue Climber title", rewardType: "title" },
+  { level: 4, code: "soft_currency_250", label: "250 soft currency", rewardType: "soft_currency", quantity: 250 },
+  { level: 5, code: "ranked_banner_silver", label: "Silver ranked banner", rewardType: "cosmetic" },
+  { level: 6, code: "soft_currency_500", label: "500 soft currency", rewardType: "soft_currency", quantity: 500 }
 ];
 
 @Injectable()
 export class ProgressionService {
-  private readonly progressions = new Map<string, ProgressionState>();
-  private readonly auditLogs: ProgressionAuditEntry[] = [];
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  awardMatchXp(input: AwardMatchXpInput): MatchProgressionResult {
-    const state = this.ensureProgression(input.playerId);
+  async awardMatchXp(input: AwardMatchXpInput): Promise<MatchProgressionResult> {
+    const xpAwarded = BASE_XP_BY_MODE[input.mode] + OUTCOME_XP[input.outcome];
+
+    const state = await this.prisma.accountProgression.upsert({
+      where: { userId: input.playerId },
+      create: { userId: input.playerId, level: 1, lifetimeXp: 0 },
+      update: {}
+    });
+
     const levelBefore = state.level;
     const lifetimeXpBefore = state.lifetimeXp;
-    const xpAwarded = this.calculateMatchXp(input.mode, input.outcome);
+    const lifetimeXpAfter = lifetimeXpBefore + xpAwarded;
+    const levelAfter = this.resolveLevel(lifetimeXpAfter);
 
-    state.lifetimeXp += xpAwarded;
-    state.level = this.resolveLevel(state.lifetimeXp);
-    state.updatedAt = input.occurredAt;
+    await this.prisma.accountProgression.update({
+      where: { userId: input.playerId },
+      data: { lifetimeXp: lifetimeXpAfter, level: levelAfter }
+    });
 
-    const rewardsGranted = this.grantNewLevelRewards(state, levelBefore + 1, state.level, input.occurredAt);
+    const rewardsGranted = await this.grantNewLevelRewards(
+      input.playerId,
+      levelBefore + 1,
+      levelAfter,
+      input.occurredAt
+    );
 
-    this.auditLogs.push({
-      id: randomUUID(),
-      actorId: input.actorId,
-      action: "progression.xp_award",
-      targetType: "account_progression",
-      targetId: input.playerId,
-      metadata: {
-        matchId: input.matchId,
-        mode: input.mode,
-        outcome: input.outcome,
-        xpAwarded,
-        levelBefore,
-        levelAfter: state.level,
-        lifetimeXpBefore,
-        lifetimeXpAfter: state.lifetimeXp,
-        rewardsGranted: rewardsGranted.map((reward) => reward.code)
-      },
-      createdAt: input.occurredAt
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: input.actorId,
+        action: "progression.xp_award",
+        targetType: "account_progression",
+        targetId: input.playerId,
+        metadata: {
+          matchId: input.matchId,
+          mode: input.mode,
+          outcome: input.outcome,
+          xpAwarded,
+          levelBefore,
+          levelAfter,
+          lifetimeXpBefore,
+          lifetimeXpAfter,
+          rewardsGranted: rewardsGranted.map((r) => r.code)
+        } as never
+      }
     });
 
     return {
       xpAwarded,
       levelBefore,
-      levelAfter: state.level,
+      levelAfter,
       lifetimeXpBefore,
-      lifetimeXpAfter: state.lifetimeXp,
+      lifetimeXpAfter,
       rewardsGranted
     };
   }
 
-  getPlayerProgression(playerId: string): PlayerProgressionResponse {
-    return this.toProgressionResponse(this.ensureProgression(playerId));
+  async getPlayerProgression(playerId: string): Promise<PlayerProgressionResponse> {
+    const [state, grants] = await Promise.all([
+      this.prisma.accountProgression.upsert({
+        where: { userId: playerId },
+        create: { userId: playerId, level: 1, lifetimeXp: 0 },
+        update: {}
+      }),
+      this.prisma.playerLevelRewardGrant.findMany({ where: { userId: playerId } })
+    ]);
+
+    const rewards: GrantedLevelReward[] = grants.map((g) => ({
+      level: g.level,
+      code: g.rewardCode,
+      label: g.label,
+      rewardType: g.rewardType.toLowerCase() as GrantedLevelReward["rewardType"],
+      quantity: g.quantity ?? undefined,
+      grantedAt: g.grantedAt.toISOString()
+    }));
+
+    return this.toProgressionResponse(playerId, state.level, state.lifetimeXp, state.updatedAt.toISOString(), rewards);
   }
 
   getLevelRewards(): LevelReward[] {
@@ -159,96 +145,73 @@ export class ProgressionService {
     };
   }
 
-  getAuditLogs(): ProgressionAuditEntry[] {
-    return [...this.auditLogs];
-  }
+  // ─── Private helpers ─────────────────────────────────────────────────────
 
-  private ensureProgression(playerId: string): ProgressionState {
-    const existing = this.progressions.get(playerId);
-    if (existing) {
-      return existing;
-    }
-
-    const state: ProgressionState = {
-      playerId,
-      level: 1,
-      lifetimeXp: 0,
-      rewards: [],
-      updatedAt: new Date().toISOString()
-    };
-    this.progressions.set(playerId, state);
-    return state;
-  }
-
-  private calculateMatchXp(mode: GameMode, outcome: MatchOutcome): number {
-    return BASE_XP_BY_MODE[mode] + OUTCOME_XP[outcome];
-  }
-
-  private resolveLevel(lifetimeXp: number): number {
-    return LEVEL_THRESHOLDS.filter((threshold) => lifetimeXp >= threshold.minLifetimeXp)
-      .sort((a, b) => b.level - a.level)[0]?.level ?? 1;
-  }
-
-  private grantNewLevelRewards(
-    state: ProgressionState,
+  private async grantNewLevelRewards(
+    playerId: string,
     firstLevel: number,
     lastLevel: number,
     grantedAt: string
-  ): GrantedLevelReward[] {
-    if (lastLevel < firstLevel) {
-      return [];
+  ): Promise<GrantedLevelReward[]> {
+    if (lastLevel < firstLevel) return [];
+
+    const existing = await this.prisma.playerLevelRewardGrant.findMany({ where: { userId: playerId } });
+    const alreadyGranted = new Set(existing.map((g) => g.rewardCode));
+
+    const toGrant = LEVEL_REWARDS.filter(
+      (r) => r.level >= firstLevel && r.level <= lastLevel && !alreadyGranted.has(r.code)
+    );
+
+    if (toGrant.length > 0) {
+      await this.prisma.playerLevelRewardGrant.createMany({
+        data: toGrant.map((r) => ({
+          userId: playerId,
+          level: r.level,
+          rewardCode: r.code,
+          label: r.label,
+          rewardType: r.rewardType.toUpperCase() as "SOFT_CURRENCY" | "COSMETIC" | "TITLE",
+          quantity: r.quantity,
+          grantedAt: new Date(grantedAt)
+        }))
+      });
     }
 
-    const alreadyGranted = new Set(state.rewards.map((reward) => reward.code));
-    const rewardsGranted = LEVEL_REWARDS.filter(
-      (reward) => reward.level >= firstLevel && reward.level <= lastLevel && !alreadyGranted.has(reward.code)
-    ).map((reward) => ({
-      ...reward,
-      grantedAt
-    }));
-
-    state.rewards.push(...rewardsGranted);
-    return rewardsGranted;
+    return toGrant.map((r) => ({ ...r, grantedAt }));
   }
 
-  private toProgressionResponse(state: ProgressionState): PlayerProgressionResponse {
-    const currentLevelMinXp = this.getLevelMinXp(state.level);
-    const nextLevelXp = this.getNextLevelMinXp(state.level);
-    const currentLevelXp = state.lifetimeXp - currentLevelMinXp;
+  private resolveLevel(lifetimeXp: number): number {
+    return LEVEL_THRESHOLDS.filter((t) => lifetimeXp >= t.minLifetimeXp)
+      .sort((a, b) => b.level - a.level)[0]?.level ?? 1;
+  }
+
+  private toProgressionResponse(
+    playerId: string,
+    level: number,
+    lifetimeXp: number,
+    updatedAt: string,
+    rewards: GrantedLevelReward[]
+  ): PlayerProgressionResponse {
+    const currentLevelMinXp = LEVEL_THRESHOLDS.find((t) => t.level === level)?.minLifetimeXp ?? 0;
+    const nextLevelXp = LEVEL_THRESHOLDS.find((t) => t.level === level + 1)?.minLifetimeXp;
+    const currentLevelXp = lifetimeXp - currentLevelMinXp;
 
     if (nextLevelXp === undefined) {
-      return {
-        playerId: state.playerId,
-        level: state.level,
-        lifetimeXp: state.lifetimeXp,
-        currentLevelXp,
-        levelProgressPercent: 100,
-        rewards: [...state.rewards],
-        updatedAt: state.updatedAt
-      };
+      return { playerId, level, lifetimeXp, currentLevelXp, levelProgressPercent: 100, rewards, updatedAt };
     }
 
     const levelSpan = nextLevelXp - currentLevelMinXp;
-    const xpToNextLevel = nextLevelXp - state.lifetimeXp;
+    const xpToNextLevel = nextLevelXp - lifetimeXp;
 
     return {
-      playerId: state.playerId,
-      level: state.level,
-      lifetimeXp: state.lifetimeXp,
+      playerId,
+      level,
+      lifetimeXp,
       currentLevelXp,
       nextLevelXp,
       xpToNextLevel,
       levelProgressPercent: Math.min(100, Math.round((currentLevelXp / levelSpan) * 100)),
-      rewards: [...state.rewards],
-      updatedAt: state.updatedAt
+      rewards,
+      updatedAt
     };
-  }
-
-  private getLevelMinXp(level: number): number {
-    return LEVEL_THRESHOLDS.find((threshold) => threshold.level === level)?.minLifetimeXp ?? 0;
-  }
-
-  private getNextLevelMinXp(level: number): number | undefined {
-    return LEVEL_THRESHOLDS.find((threshold) => threshold.level === level + 1)?.minLifetimeXp;
   }
 }

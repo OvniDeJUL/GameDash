@@ -29,33 +29,30 @@ export class AuthController {
   ) {}
 
   @Post("register")
-  register(@Body() body: RegisterRequest): AuthTokensResponse {
+  register(@Body() body: RegisterRequest): Promise<AuthTokensResponse> {
     return this.authService.register(body);
   }
 
   @Post("login")
-  login(@Body() body: LoginRequest): AuthTokensResponse {
+  login(@Body() body: LoginRequest): Promise<AuthTokensResponse> {
     return this.authService.login(body);
   }
 
   @Post("refresh")
-  refresh(@Body() body: RefreshRequest): AuthTokensResponse {
+  refresh(@Body() body: RefreshRequest): Promise<AuthTokensResponse> {
     return this.authService.refresh(body);
   }
 
   @Get("me")
   @UseGuards(AuthGuard)
-  me(@CurrentUser() user: AuthenticatedUser): AuthUserResponse {
+  me(@CurrentUser() user: AuthenticatedUser): Promise<AuthUserResponse> {
     return this.authService.getCurrentUser(user);
   }
 
   @Post("logout")
   @UseGuards(AuthGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
-  logout(
-    @Body() body: LogoutRequest,
-    @CurrentUser() user: AuthenticatedUser
-  ): void {
-    this.authService.logout(body, user);
+  logout(@Body() body: LogoutRequest, @CurrentUser() user: AuthenticatedUser): Promise<void> {
+    return this.authService.logout(body, user);
   }
 }

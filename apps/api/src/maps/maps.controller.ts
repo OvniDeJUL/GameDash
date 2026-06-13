@@ -32,30 +32,27 @@ export class MapsController {
     @Query("tag") tag?: string,
     @Query("status") status?: MapStatus,
     @Query("creatorId") creatorId?: string
-  ): MapSummary[] {
+  ): Promise<MapSummary[]> {
     return this.mapsService.listMaps({ q, tag, status, creatorId });
   }
 
   @Post()
-  createMap(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() body: CreateMapRequest
-  ): MapSummary {
+  createMap(@CurrentUser() user: AuthenticatedUser, @Body() body: CreateMapRequest): Promise<MapSummary> {
     return this.mapsService.createMap(user, body);
   }
 
   @Get("creators/:creatorId/stats")
-  getCreatorStats(@Param("creatorId") creatorId: string): CreatorMapStatsResponse {
+  getCreatorStats(@Param("creatorId") creatorId: string): Promise<CreatorMapStatsResponse> {
     return this.mapsService.getCreatorStats(creatorId);
   }
 
   @Get(":mapId")
-  getMap(@Param("mapId") mapId: string): MapDetailResponse {
+  getMap(@Param("mapId") mapId: string): Promise<MapDetailResponse> {
     return this.mapsService.getMap(mapId);
   }
 
   @Get(":mapId/stats")
-  getMapStats(@Param("mapId") mapId: string): MapStatsResponse {
+  getMapStats(@Param("mapId") mapId: string): Promise<MapStatsResponse> {
     return this.mapsService.getMapStats(mapId);
   }
 
@@ -64,7 +61,7 @@ export class MapsController {
     @CurrentUser() user: AuthenticatedUser,
     @Param("mapId") mapId: string,
     @Body() body: CreateMapVersionRequest
-  ): MapVersionResponse {
+  ): Promise<MapVersionResponse> {
     return this.mapsService.createVersion(user, mapId, body);
   }
 
@@ -73,7 +70,7 @@ export class MapsController {
     @CurrentUser() user: AuthenticatedUser,
     @Param("mapId") mapId: string,
     @Body() body: VoteMapRequest
-  ): MapInteractionResponse {
+  ): Promise<MapInteractionResponse> {
     return this.mapsService.voteMap(user, mapId, body);
   }
 
@@ -82,7 +79,7 @@ export class MapsController {
     @CurrentUser() user: AuthenticatedUser,
     @Param("mapId") mapId: string,
     @Body() body: TestMapRequest
-  ): MapInteractionResponse {
+  ): Promise<MapInteractionResponse> {
     return this.mapsService.testMap(user, mapId, body);
   }
 
@@ -91,7 +88,7 @@ export class MapsController {
     @CurrentUser() user: AuthenticatedUser,
     @Param("mapId") mapId: string,
     @Body() body: FavoriteMapRequest
-  ): MapInteractionResponse {
+  ): Promise<MapInteractionResponse> {
     return this.mapsService.favoriteMap(user, mapId, body);
   }
 }

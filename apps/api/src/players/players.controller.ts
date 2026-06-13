@@ -6,9 +6,9 @@ import type {
   PlayerProgressionResponse,
   ProgressionRulesResponse,
   LevelReward,
-  RankConfig
+  RankConfig,
+  UpdatePlayerProfileRequest
 } from "@gamedash/contracts";
-import type { UpdatePlayerProfileRequest } from "@gamedash/contracts";
 import { AuthGuard } from "../auth/auth.guard";
 import { AuthService } from "../auth/auth.service";
 import { CurrentUser } from "../auth/current-user.decorator";
@@ -29,7 +29,7 @@ export class PlayersController {
   ) {}
 
   @Get("me/profile")
-  getMyProfile(@CurrentUser() user: AuthenticatedUser): PlayerProfileResponse {
+  getMyProfile(@CurrentUser() user: AuthenticatedUser): Promise<PlayerProfileResponse> {
     return this.authService.getProfile(user);
   }
 
@@ -37,7 +37,7 @@ export class PlayersController {
   updateMyProfile(
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: UpdatePlayerProfileRequest
-  ): PlayerProfileResponse {
+  ): Promise<PlayerProfileResponse> {
     return this.authService.updateProfile(user, body);
   }
 
@@ -57,17 +57,17 @@ export class PlayersController {
   }
 
   @Get(":playerId/mmr")
-  getPlayerMmr(@Param("playerId") playerId: string): PlayerMmrResponse {
+  getPlayerMmr(@Param("playerId") playerId: string): Promise<PlayerMmrResponse> {
     return this.matchmakingService.getPlayerMmr(playerId);
   }
 
   @Get(":playerId/matches")
-  getPlayerMatches(@Param("playerId") playerId: string): MatchHistoryItem[] {
+  getPlayerMatches(@Param("playerId") playerId: string): Promise<MatchHistoryItem[]> {
     return this.matchmakingService.getPlayerMatches(playerId);
   }
 
   @Get(":playerId/progression")
-  getPlayerProgression(@Param("playerId") playerId: string): PlayerProgressionResponse {
+  getPlayerProgression(@Param("playerId") playerId: string): Promise<PlayerProgressionResponse> {
     return this.progressionService.getPlayerProgression(playerId);
   }
 }

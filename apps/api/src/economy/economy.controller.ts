@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import type {
   InventoryItemResponse,
   PurchaseRequest,
@@ -26,17 +26,17 @@ export class EconomyController {
   }
 
   @Get("wallet")
-  getWallet(@CurrentUser() user: AuthenticatedUser): WalletResponse {
+  getWallet(@CurrentUser() user: AuthenticatedUser): Promise<WalletResponse> {
     return this.economyService.getWallet(user);
   }
 
   @Get("inventory")
-  getInventory(@CurrentUser() user: AuthenticatedUser): InventoryItemResponse[] {
+  getInventory(@CurrentUser() user: AuthenticatedUser): Promise<InventoryItemResponse[]> {
     return this.economyService.getInventory(user);
   }
 
   @Get("transactions")
-  getTransactions(@CurrentUser() user: AuthenticatedUser): TransactionResponse[] {
+  getTransactions(@CurrentUser() user: AuthenticatedUser): Promise<TransactionResponse[]> {
     return this.economyService.getTransactions(user);
   }
 
@@ -44,7 +44,15 @@ export class EconomyController {
   purchase(
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: PurchaseRequest
-  ): PurchaseResponse {
+  ): Promise<PurchaseResponse> {
     return this.economyService.purchase(user, body);
+  }
+
+  @Patch("inventory/:itemCode/equip")
+  equipItem(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("itemCode") itemCode: string
+  ): Promise<InventoryItemResponse> {
+    return this.economyService.equipItem(user, itemCode);
   }
 }

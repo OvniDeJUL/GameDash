@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   UnauthorizedException
 } from "@nestjs/common";
@@ -16,34 +17,7 @@ import type {
   UpdatePlayerProfileRequest
 } from "@gamedash/contracts";
 import type { AuthenticatedUser } from "./auth.types";
-
-interface StoredUser {
-  id: string;
-  email: string;
-  passwordHash: string;
-  role: Role;
-  profile: PlayerProfileResponse;
-  createdAt: string;
-}
-
-interface StoredRefreshToken {
-  id: string;
-  userId: string;
-  tokenHash: string;
-  revokedAt?: string;
-  expiresAt: string;
-  createdAt: string;
-}
-
-interface AuditEntry {
-  id: string;
-  actorId: string;
-  action: string;
-  targetType: string;
-  targetId?: string;
-  metadata?: Record<string, unknown>;
-  createdAt: string;
-}
+import { PrismaService } from "../prisma/prisma.service";
 
 interface AccessPayload {
   sub: string;
@@ -54,91 +28,96 @@ interface AccessPayload {
 
 @Injectable()
 export class AuthService {
-  private readonly users = new Map<string, StoredUser>();
-  private readonly usersByEmail = new Map<string, string>();
-  private readonly refreshTokens = new Map<string, StoredRefreshToken>();
-  private readonly auditLogs: AuditEntry[] = [];
   private readonly accessTtlSeconds = 15 * 60;
   private readonly refreshTtlSeconds = 30 * 24 * 60 * 60;
   private readonly accessSecret =
     process.env.JWT_ACCESS_SECRET ?? "local-dev-access-secret-change-me";
 
-  register(body: RegisterRequest): AuthTokensResponse {
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+
+  async register(body: RegisterRequest): Promise<AuthTokensResponse> {
     const email = this.normalizeEmail(body.email);
     this.assertPassword(body.password);
     const pseudo = this.assertText(body.pseudo, "pseudo");
 
-    if (this.usersByEmail.has(email)) {
-      throw new BadRequestException("Email already registered.");
-    }
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+    if (existing) throw new BadRequestException("Email already registered.");
 
-    const user: StoredUser = {
-      id: cryptoRandomId("usr"),
-      email,
-      passwordHash: this.hashPassword(body.password),
-      role: "player",
-      profile: {
-        userId: "",
-        pseudo,
-        avatarUrl: normalizeOptional(body.avatarUrl),
-        region: normalizeOptional(body.region),
-        bio: normalizeOptional(body.bio)
+    const user = await this.prisma.user.create({
+      data: {
+        email,
+        passwordHash: this.hashPassword(body.password),
+        role: "PLAYER",
+        profile: {
+          create: {
+            pseudo,
+            avatarUrl: normalizeOptional(body.avatarUrl),
+            region: normalizeOptional(body.region),
+            bio: normalizeOptional(body.bio)
+          }
+        }
       },
-      createdAt: new Date().toISOString()
-    };
-    user.profile.userId = user.id;
+      include: { profile: true }
+    });
 
-    this.users.set(user.id, user);
-    this.usersByEmail.set(user.email, user.id);
-    this.audit(user.id, "auth.register", "user", user.id, { role: user.role });
-
-    return this.issueTokenPair(user, "auth.register.tokens_issued");
+    await this.audit(user.id, "auth.register", "user", user.id, { role: user.role });
+    return this.issueTokenPair(user);
   }
 
-  login(body: LoginRequest): AuthTokensResponse {
+  async login(body: LoginRequest): Promise<AuthTokensResponse> {
     const email = this.normalizeEmail(body.email);
-    const user = this.findByEmail(email);
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      include: { profile: true }
+    });
 
     if (!user || !this.verifyPassword(body.password, user.passwordHash)) {
       throw new UnauthorizedException("Invalid email or password.");
     }
 
-    this.audit(user.id, "auth.login", "user", user.id);
-    return this.issueTokenPair(user, "auth.login.tokens_issued");
+    await this.audit(user.id, "auth.login", "user", user.id);
+    return this.issueTokenPair(user);
   }
 
-  refresh(body: RefreshRequest): AuthTokensResponse {
+  async refresh(body: RefreshRequest): Promise<AuthTokensResponse> {
     const tokenHash = this.hashToken(body.refreshToken);
-    const token = this.refreshTokens.get(tokenHash);
+    const token = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+      include: { user: { include: { profile: true } } }
+    });
 
-    if (!token || token.revokedAt || new Date(token.expiresAt) <= new Date()) {
+    if (!token || token.revokedAt || token.expiresAt <= new Date()) {
       throw new UnauthorizedException("Refresh token is invalid or expired.");
     }
 
-    const user = this.requireUser(token.userId);
-    token.revokedAt = new Date().toISOString();
-    this.audit(user.id, "auth.refresh", "refresh_token", token.id);
+    await this.prisma.refreshToken.update({
+      where: { id: token.id },
+      data: { revokedAt: new Date() }
+    });
 
-    return this.issueTokenPair(user, "auth.refresh.tokens_issued");
+    await this.audit(token.userId, "auth.refresh", "refresh_token", token.id);
+    return this.issueTokenPair(token.user);
   }
 
-  logout(body: LogoutRequest, actor: AuthenticatedUser): void {
+  async logout(body: LogoutRequest, actor: AuthenticatedUser): Promise<void> {
     const tokenHash = this.hashToken(body.refreshToken);
-    const token = this.refreshTokens.get(tokenHash);
+    const token = await this.prisma.refreshToken.findUnique({ where: { tokenHash } });
 
     if (!token || token.userId !== actor.id || token.revokedAt) {
       throw new UnauthorizedException("Refresh token is invalid.");
     }
 
-    token.revokedAt = new Date().toISOString();
-    this.audit(actor.id, "auth.logout", "refresh_token", token.id);
+    await this.prisma.refreshToken.update({
+      where: { id: token.id },
+      data: { revokedAt: new Date() }
+    });
+    await this.audit(actor.id, "auth.logout", "refresh_token", token.id);
   }
 
+  /** Stays sync — JWT verification never needs DB (stateless design). */
   verifyAccessToken(accessToken: string): AuthenticatedUser {
     const parts = accessToken.split(".");
-    if (parts.length !== 3) {
-      throw new UnauthorizedException("Malformed access token.");
-    }
+    if (parts.length !== 3) throw new UnauthorizedException("Malformed access token.");
 
     const [encodedHeader, encodedPayload, signature] = parts as [string, string, string];
     const expectedSignature = this.sign(`${encodedHeader}.${encodedPayload}`);
@@ -152,74 +131,115 @@ export class AuthService {
       throw new UnauthorizedException("Access token is invalid or expired.");
     }
 
-    const user = this.requireUser(payload.sub);
-    return {
-      id: user.id,
-      email: user.email,
-      role: user.role
-    };
+    return { id: payload.sub, email: payload.email, role: payload.role };
   }
 
-  getCurrentUser(actor: AuthenticatedUser): AuthUserResponse {
-    return this.toAuthUser(this.requireUser(actor.id));
+  async getCurrentUser(actor: AuthenticatedUser): Promise<AuthUserResponse> {
+    const user = await this.requireUser(actor.id);
+    return this.toAuthUser(user);
   }
 
-  getProfile(actor: AuthenticatedUser): PlayerProfileResponse {
-    return this.requireUser(actor.id).profile;
+  async getProfile(actor: AuthenticatedUser): Promise<PlayerProfileResponse> {
+    const user = await this.requireUser(actor.id);
+    return this.toProfile(user);
   }
 
-  updateProfile(
+  async updateProfile(
     actor: AuthenticatedUser,
     body: UpdatePlayerProfileRequest
-  ): PlayerProfileResponse {
-    const user = this.requireUser(actor.id);
-    const nextProfile: PlayerProfileResponse = {
-      ...user.profile,
-      pseudo: body.pseudo ? this.assertText(body.pseudo, "pseudo") : user.profile.pseudo,
-      avatarUrl:
-        body.avatarUrl === undefined ? user.profile.avatarUrl : normalizeOptional(body.avatarUrl),
-      region: body.region === undefined ? user.profile.region : normalizeOptional(body.region),
-      bio: body.bio === undefined ? user.profile.bio : normalizeOptional(body.bio)
-    };
+  ): Promise<PlayerProfileResponse> {
+    const user = await this.requireUser(actor.id);
+    const current = user.profile!;
 
-    user.profile = nextProfile;
-    this.audit(actor.id, "profile.update", "user", user.id);
-    return nextProfile;
+    const updated = await this.prisma.playerProfile.update({
+      where: { userId: actor.id },
+      data: {
+        pseudo: body.pseudo ? this.assertText(body.pseudo, "pseudo") : current.pseudo,
+        avatarUrl: body.avatarUrl === undefined ? current.avatarUrl : normalizeOptional(body.avatarUrl),
+        region: body.region === undefined ? current.region : normalizeOptional(body.region),
+        bio: body.bio === undefined ? current.bio : normalizeOptional(body.bio)
+      }
+    });
+
+    await this.audit(actor.id, "profile.update", "user", actor.id);
+    return {
+      userId: actor.id,
+      pseudo: updated.pseudo,
+      avatarUrl: updated.avatarUrl ?? undefined,
+      region: updated.region ?? undefined,
+      bio: updated.bio ?? undefined
+    };
   }
 
-  getAuditLogs(): AuditEntry[] {
-    return [...this.auditLogs];
-  }
+  // ─── Private helpers ──────────────────────────────────────────────────────
 
-  private issueTokenPair(user: StoredUser, action: string): AuthTokensResponse {
-    const accessToken = this.createAccessToken(user);
-    const refreshToken = `gd_rt_${randomBytes(32).toString("base64url")}`;
-    const refreshRecord: StoredRefreshToken = {
-      id: cryptoRandomId("rft"),
-      userId: user.id,
-      tokenHash: this.hashToken(refreshToken),
-      expiresAt: new Date(Date.now() + this.refreshTtlSeconds * 1000).toISOString(),
-      createdAt: new Date().toISOString()
-    };
+  private async issueTokenPair(
+    user: { id: string; email: string; role: string; profile: { pseudo: string; avatarUrl: string | null; region: string | null; bio: string | null } | null }
+  ): Promise<AuthTokensResponse> {
+    const role = user.role.toLowerCase() as Role;
+    const accessToken = this.createAccessToken(user.id, user.email, role);
+    const rawRefresh = `gd_rt_${randomBytes(32).toString("base64url")}`;
 
-    this.refreshTokens.set(refreshRecord.tokenHash, refreshRecord);
-    this.audit(user.id, action, "refresh_token", refreshRecord.id);
+    await this.prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: this.hashToken(rawRefresh),
+        expiresAt: new Date(Date.now() + this.refreshTtlSeconds * 1000)
+      }
+    });
 
     return {
       accessToken,
-      refreshToken,
-      role: user.role,
+      refreshToken: rawRefresh,
+      role,
       user: this.toAuthUser(user)
     };
   }
 
-  private createAccessToken(user: StoredUser): string {
+  private toAuthUser(user: {
+    id: string;
+    email: string;
+    role: string;
+    profile: { pseudo: string; avatarUrl: string | null; region: string | null; bio: string | null } | null;
+  }): AuthUserResponse {
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role.toLowerCase() as Role,
+      profile: this.toProfile(user)
+    };
+  }
+
+  private toProfile(user: {
+    id: string;
+    profile: { pseudo: string; avatarUrl: string | null; region: string | null; bio: string | null } | null;
+  }): PlayerProfileResponse {
+    const p = user.profile;
+    return {
+      userId: user.id,
+      pseudo: p?.pseudo ?? "",
+      avatarUrl: p?.avatarUrl ?? undefined,
+      region: p?.region ?? undefined,
+      bio: p?.bio ?? undefined
+    };
+  }
+
+  private async requireUser(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { profile: true }
+    });
+    if (!user) throw new UnauthorizedException("User no longer exists.");
+    return user;
+  }
+
+  private createAccessToken(userId: string, email: string, role: Role): string {
     const encodedHeader = toBase64Url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
     const encodedPayload = toBase64Url(
       JSON.stringify({
-        sub: user.id,
-        email: user.email,
-        role: user.role,
+        sub: userId,
+        email,
+        role,
         exp: nowSeconds() + this.accessTtlSeconds
       } satisfies AccessPayload)
     );
@@ -233,23 +253,14 @@ export class AuthService {
 
   private hashPassword(password: string): string {
     const salt = randomBytes(16).toString("base64url");
-    const derived = pbkdf2Sync(password, salt, 120000, 64, "sha512").toString("base64url");
+    const derived = pbkdf2Sync(password, salt, 120_000, 64, "sha512").toString("base64url");
     return `pbkdf2_sha512$120000$${salt}$${derived}`;
   }
 
   private verifyPassword(password: string, storedHash: string): boolean {
     const [algorithm, iterationsRaw, salt, expected] = storedHash.split("$");
-    if (algorithm !== "pbkdf2_sha512" || !iterationsRaw || !salt || !expected) {
-      return false;
-    }
-
-    const actual = pbkdf2Sync(
-      password,
-      salt,
-      Number(iterationsRaw),
-      64,
-      "sha512"
-    ).toString("base64url");
+    if (algorithm !== "pbkdf2_sha512" || !iterationsRaw || !salt || !expected) return false;
+    const actual = pbkdf2Sync(password, salt, Number(iterationsRaw), 64, "sha512").toString("base64url");
     return safeEqual(actual, expected);
   }
 
@@ -262,7 +273,6 @@ export class AuthService {
     if (!normalized || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(normalized)) {
       throw new BadRequestException("A valid email is required.");
     }
-
     return normalized;
   }
 
@@ -274,64 +284,27 @@ export class AuthService {
 
   private assertText(value: string, field: string): string {
     const normalized = normalizeOptional(value);
-    if (!normalized) {
-      throw new BadRequestException(`${field} is required.`);
-    }
-
+    if (!normalized) throw new BadRequestException(`${field} is required.`);
     return normalized;
   }
 
-  private findByEmail(email: string): StoredUser | undefined {
-    const userId = this.usersByEmail.get(email);
-    return userId ? this.users.get(userId) : undefined;
-  }
-
-  private requireUser(userId: string): StoredUser {
-    const user = this.users.get(userId);
-    if (!user) {
-      throw new UnauthorizedException("User no longer exists.");
-    }
-
-    return user;
-  }
-
-  private toAuthUser(user: StoredUser): AuthUserResponse {
-    return {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      profile: user.profile
-    };
-  }
-
-  private audit(
+  private async audit(
     actorId: string,
     action: string,
     targetType: string,
     targetId?: string,
-    metadata?: Record<string, unknown>
-  ): void {
-    this.auditLogs.push({
-      id: cryptoRandomId("aud"),
-      actorId,
-      action,
-      targetType,
-      targetId,
-      metadata,
-      createdAt: new Date().toISOString()
+    metadata?: Record<string, string | number | boolean | null>
+  ): Promise<void> {
+    await this.prisma.auditLog.create({
+      data: { actorId, action, targetType, targetId, metadata: metadata as never }
     });
   }
 }
 
-function cryptoRandomId(prefix: string): string {
-  return `${prefix}_${randomBytes(12).toString("hex")}`;
-}
+// ─── Pure helpers ──────────────────────────────────────────────────────────
 
 function normalizeOptional(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
+  if (typeof value !== "string") return undefined;
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : undefined;
 }
@@ -349,11 +322,8 @@ function fromBase64Url(value: string): string {
 }
 
 function safeEqual(actual: string, expected: string): boolean {
-  const actualBuffer = Buffer.from(actual);
-  const expectedBuffer = Buffer.from(expected);
-  if (actualBuffer.length !== expectedBuffer.length) {
-    return false;
-  }
-
-  return timingSafeEqual(actualBuffer, expectedBuffer);
+  const a = Buffer.from(actual);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }

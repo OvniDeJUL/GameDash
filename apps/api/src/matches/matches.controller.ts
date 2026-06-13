@@ -1,8 +1,5 @@
 import { Body, Controller, Inject, Param, Post, UseGuards } from "@nestjs/common";
-import type {
-  MatchResultRequest,
-  MatchResultResponse
-} from "@gamedash/contracts";
+import type { MatchResultRequest, MatchResultResponse } from "@gamedash/contracts";
 import { AuthGuard } from "../auth/auth.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser } from "../auth/auth.types";
@@ -21,7 +18,7 @@ export class MatchesController {
     @CurrentUser() user: AuthenticatedUser,
     @Param("matchId") matchId: string,
     @Body() body: MatchResultRequest
-  ): MatchResultResponse {
+  ): Promise<MatchResultResponse> {
     return this.matchmakingService.submitResult(user, matchId, body);
   }
 }

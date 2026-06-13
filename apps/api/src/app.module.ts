@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { PrismaService } from "./prisma/prisma.service";
 import { AuthGuard } from "./auth/auth.guard";
 import { AdminController } from "./admin/admin.controller";
 import { AdminService } from "./admin/admin.service";
@@ -35,6 +36,7 @@ import { ObservabilityService } from "./observability/observability.service";
     AdminController
   ],
   providers: [
+    PrismaService,
     AdminService,
     AuthService,
     MatchmakingService,

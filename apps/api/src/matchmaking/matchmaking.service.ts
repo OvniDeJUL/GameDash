@@ -12,6 +12,7 @@ import type {
 } from "@gamedash/contracts";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { ProgressionService } from "../progression/progression.service";
+import { PrismaService } from "../prisma/prisma.service";
 
 type PlayerState = QueueStatusResponse["state"];
 type MatchOutcome = "win" | "loss" | "draw";
@@ -30,26 +31,6 @@ interface PlayerStatus {
   opponentPlayerId?: string;
 }
 
-interface StoredMatch {
-  id: string;
-  mode: GameMode;
-  participantIds: [string, string];
-  createdAt: string;
-  finishedAt?: string;
-  winnerPlayerId?: string;
-  notes?: string;
-}
-
-interface AuditEntry {
-  id: string;
-  actorId: string;
-  action: string;
-  targetType: string;
-  targetId?: string;
-  metadata?: Record<string, unknown>;
-  createdAt: string;
-}
-
 const GAME_MODES: GameMode[] = ["ranked", "unranked", "fun"];
 
 const RANK_CONFIGS: RankConfig[] = [
@@ -62,55 +43,59 @@ const RANK_CONFIGS: RankConfig[] = [
   { mode: "fun", minMmr: 0, rank: "CASUAL", sortOrder: 10 }
 ];
 
+const MMR_DELTAS: Record<GameMode, { win: number; loss: number }> = {
+  ranked: { win: 32, loss: -24 },
+  unranked: { win: 10, loss: -8 },
+  fun: { win: 5, loss: -4 }
+};
+
+const PLACEMENT_MMR = 1000;
+
 @Injectable()
 export class MatchmakingService {
-  constructor(
-    @Inject(ProgressionService)
-    private readonly progressionService = new ProgressionService()
-  ) {}
-
+  /** In-memory queue — intentionally ephemeral (real-time matching). */
   private readonly queues = new Map<GameMode, QueueEntry[]>();
   private readonly statuses = new Map<string, PlayerStatus>();
-  private readonly matches = new Map<string, StoredMatch>();
-  private readonly ratings = new Map<string, Map<GameMode, number>>();
-  private readonly histories = new Map<string, MatchHistoryItem[]>();
-  private readonly auditLogs: AuditEntry[] = [];
 
-  joinQueue(actor: AuthenticatedUser, body: QueueJoinRequest): QueueStatusResponse {
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(ProgressionService) private readonly progressionService: ProgressionService
+  ) {}
+
+  async joinQueue(actor: AuthenticatedUser, body: QueueJoinRequest): Promise<QueueStatusResponse> {
     const mode = this.assertMode(body.mode);
     const current = this.statuses.get(actor.id);
 
-    if (current?.state === "in_match") {
-      return this.toQueueStatus(actor.id, current);
-    }
+    if (current?.state === "in_match") return this.toQueueStatus(actor.id, current);
 
     this.removeFromQueues(actor.id);
-    this.ensureRatings(actor.id);
 
     const queue = this.getQueue(mode);
     const opponent = queue.shift();
 
     if (opponent) {
-      const match = this.createMatch(mode, actor.id, opponent.playerId);
-      this.statuses.set(actor.id, {
-        state: "in_match",
-        mode,
-        matchId: match.id,
-        opponentPlayerId: opponent.playerId
+      const matchId = randomUUID();
+      await this.prisma.match.create({
+        data: {
+          id: matchId,
+          mode: mode.toUpperCase() as "RANKED" | "UNRANKED" | "FUN",
+          participants: {
+            createMany: {
+              data: [{ userId: actor.id }, { userId: opponent.playerId }]
+            }
+          }
+        }
       });
-      this.statuses.set(opponent.playerId, {
-        state: "in_match",
-        mode,
-        matchId: match.id,
-        opponentPlayerId: actor.id
-      });
+
+      const inMatch: PlayerStatus = { state: "in_match", mode, matchId };
+      this.statuses.set(actor.id, { ...inMatch, opponentPlayerId: opponent.playerId });
+      this.statuses.set(opponent.playerId, { ...inMatch, opponentPlayerId: actor.id });
 
       return this.toQueueStatus(actor.id, this.statuses.get(actor.id)!);
     }
 
     const queuedAt = new Date().toISOString();
-    const entry: QueueEntry = { playerId: actor.id, mode, queuedAt };
-    queue.push(entry);
+    queue.push({ playerId: actor.id, mode, queuedAt });
     this.statuses.set(actor.id, { state: "in_queue", mode, queuedAt });
 
     return this.toQueueStatus(actor.id, this.statuses.get(actor.id)!);
@@ -118,10 +103,7 @@ export class MatchmakingService {
 
   leaveQueue(actor: AuthenticatedUser): QueueStatusResponse {
     const current = this.statuses.get(actor.id);
-
-    if (current?.state === "in_match") {
-      return this.toQueueStatus(actor.id, current);
-    }
+    if (current?.state === "in_match") return this.toQueueStatus(actor.id, current);
 
     this.removeFromQueues(actor.id);
     this.statuses.set(actor.id, { state: "online" });
@@ -133,139 +115,162 @@ export class MatchmakingService {
     return this.toQueueStatus(actor.id, status);
   }
 
-  submitResult(
+  async submitResult(
     actor: AuthenticatedUser,
     matchId: string,
     body: MatchResultRequest
-  ): MatchResultResponse {
-    const match = this.matches.get(matchId);
+  ): Promise<MatchResultResponse> {
+    const match = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      include: { participants: true }
+    });
 
-    if (!match) {
-      throw new NotFoundException("Match not found.");
-    }
+    if (!match) throw new NotFoundException("Match not found.");
+    if (match.finishedAt) throw new BadRequestException("Match result was already submitted.");
 
-    if (match.finishedAt) {
-      throw new BadRequestException("Match result was already submitted.");
-    }
-
-    if (!match.participantIds.includes(actor.id)) {
+    const participantIds = match.participants.map((p) => p.userId);
+    if (!participantIds.includes(actor.id)) {
       throw new BadRequestException("Only match participants can submit a result.");
     }
-
-    if (!match.participantIds.includes(body.winnerPlayerId)) {
+    if (!participantIds.includes(body.winnerPlayerId)) {
       throw new BadRequestException("Winner must be one of the match participants.");
     }
 
+    const mode = match.mode.toLowerCase() as GameMode;
     const finishedAt = new Date().toISOString();
-    const participants = match.participantIds.map((playerId) => {
-      const outcome: MatchOutcome = playerId === body.winnerPlayerId ? "win" : "loss";
-      const mmrBefore = this.getMmrValue(playerId, match.mode);
-      const mmrDelta = this.calculateMmrDelta(match.mode, outcome);
-      const mmrAfter = Math.max(0, mmrBefore + mmrDelta);
-      const rankBefore = this.resolveRank(match.mode, mmrBefore);
-      const rankAfter = this.resolveRank(match.mode, mmrAfter);
-      const progression = this.progressionService.awardMatchXp({
-        playerId,
-        mode: match.mode,
-        outcome,
-        matchId: match.id,
-        occurredAt: finishedAt,
-        actorId: actor.id
-      });
 
-      this.setMmrValue(playerId, match.mode, mmrAfter);
-      this.statuses.set(playerId, { state: "online" });
-      this.addHistory(playerId, {
-        matchId: match.id,
-        mode: match.mode,
-        createdAt: match.createdAt,
-        finishedAt,
-        result: outcome,
-        opponentPlayerId: this.getOpponentId(match, playerId),
-        mmrBefore,
-        mmrAfter,
-        mmrDelta,
-        rankBefore,
-        rankAfter
-      });
-      this.audit(actor.id, "mmr.update", "player_mmr", playerId, {
-        matchId: match.id,
-        mode: match.mode,
-        mmrBefore,
-        mmrAfter,
-        mmrDelta,
-        rankBefore,
-        rankAfter
-      });
+    const participants = await Promise.all(
+      participantIds.map(async (playerId) => {
+        const outcome: MatchOutcome = playerId === body.winnerPlayerId ? "win" : "loss";
+        const mmrBefore = await this.getMmr(playerId, mode);
+        const delta = MMR_DELTAS[mode][outcome];
+        const mmrAfter = Math.max(0, mmrBefore + delta);
+        const rankBefore = this.resolveRank(mode, mmrBefore);
+        const rankAfter = this.resolveRank(mode, mmrAfter);
 
-      return {
-        playerId,
-        outcome,
-        mmrBefore,
-        mmrAfter,
-        mmrDelta,
-        rankBefore,
-        rankAfter,
-        progression
-      };
+        await this.setMmr(playerId, mode, mmrAfter);
+        await this.prisma.matchParticipant.update({
+          where: { matchId_userId: { matchId, userId: playerId } },
+          data: {
+            outcome: outcome.toUpperCase() as "WIN" | "LOSS" | "DRAW",
+            mmrBefore,
+            mmrAfter
+          }
+        });
+
+        this.statuses.set(playerId, { state: "online" });
+
+        const progression = await this.progressionService.awardMatchXp({
+          playerId,
+          mode,
+          outcome,
+          matchId,
+          occurredAt: finishedAt,
+          actorId: actor.id
+        });
+
+        await this.prisma.auditLog.create({
+          data: {
+            actorId: actor.id,
+            action: "mmr.update",
+            targetType: "player_mmr",
+            targetId: playerId,
+            metadata: { matchId, mode, mmrBefore, mmrAfter, mmrDelta: delta, rankBefore, rankAfter } as never
+          }
+        });
+
+        return { playerId, outcome, mmrBefore, mmrAfter, mmrDelta: delta, rankBefore, rankAfter, progression };
+      })
+    );
+
+    await this.prisma.match.update({
+      where: { id: matchId },
+      data: {
+        finishedAt: new Date(finishedAt),
+        winnerUserId: body.winnerPlayerId,
+        resultNotes: body.notes,
+        resultSubmittedById: actor.id
+      }
     });
 
-    match.finishedAt = finishedAt;
-    match.winnerPlayerId = body.winnerPlayerId;
-    match.notes = body.notes;
-
-    return {
-      accepted: true,
-      mmrUpdated: true,
-      matchId: match.id,
-      mode: match.mode,
-      participants
-    };
+    return { accepted: true, mmrUpdated: true, matchId, mode, participants };
   }
 
-  getPlayerMmr(playerId: string): PlayerMmrResponse {
-    this.ensureRatings(playerId);
-    const ratings = GAME_MODES.map((mode) => {
-      const mmr = this.getMmrValue(playerId, mode);
-      return {
-        mode,
-        mmr,
-        rank: this.resolveRank(mode, mmr)
-      };
-    });
-
+  async getPlayerMmr(playerId: string): Promise<PlayerMmrResponse> {
+    const ratings = await Promise.all(
+      GAME_MODES.map(async (mode) => {
+        const mmr = await this.getMmr(playerId, mode);
+        return { mode, mmr, rank: this.resolveRank(mode, mmr) };
+      })
+    );
     return { playerId, ratings };
   }
 
-  getPlayerMatches(playerId: string): MatchHistoryItem[] {
-    return [...(this.histories.get(playerId) ?? [])];
+  async getPlayerMatches(playerId: string): Promise<MatchHistoryItem[]> {
+    const entries = await this.prisma.matchParticipant.findMany({
+      where: { userId: playerId },
+      include: { match: { include: { participants: true } } },
+      orderBy: { match: { startedAt: "desc" } }
+    });
+
+    return entries.map((entry) => {
+      const opponent = entry.match.participants.find((p) => p.userId !== playerId);
+      const outcome = entry.outcome?.toLowerCase() as "win" | "loss" | "draw" | undefined;
+      const delta = entry.mmrAfter != null && entry.mmrBefore != null
+        ? entry.mmrAfter - entry.mmrBefore
+        : undefined;
+
+      return {
+        matchId: entry.matchId,
+        mode: entry.match.mode.toLowerCase() as GameMode,
+        createdAt: entry.match.startedAt.toISOString(),
+        finishedAt: entry.match.finishedAt?.toISOString(),
+        result: outcome,
+        opponentPlayerId: opponent?.userId,
+        mmrBefore: entry.mmrBefore ?? undefined,
+        mmrAfter: entry.mmrAfter ?? undefined,
+        mmrDelta: delta,
+        rankBefore: delta !== undefined ? this.resolveRank(entry.match.mode.toLowerCase() as GameMode, entry.mmrBefore ?? 0) : undefined,
+        rankAfter: delta !== undefined ? this.resolveRank(entry.match.mode.toLowerCase() as GameMode, entry.mmrAfter ?? 0) : undefined
+      };
+    });
   }
 
   getRankConfig(): RankConfig[] {
     return [...RANK_CONFIGS];
   }
 
-  getAuditLogs(): AuditEntry[] {
-    return [...this.auditLogs];
+  // ─── Private helpers ──────────────────────────────────────────────────────
+
+  private async getMmr(playerId: string, mode: GameMode): Promise<number> {
+    const record = await this.prisma.playerMmr.upsert({
+      where: { userId_mode: { userId: playerId, mode: mode.toUpperCase() as "RANKED" | "UNRANKED" | "FUN" } },
+      create: { userId: playerId, mode: mode.toUpperCase() as "RANKED" | "UNRANKED" | "FUN", mmr: PLACEMENT_MMR },
+      update: {}
+    });
+    return record.mmr;
   }
 
-  private createMatch(mode: GameMode, playerA: string, playerB: string): StoredMatch {
-    const match: StoredMatch = {
-      id: randomUUID(),
-      mode,
-      participantIds: [playerA, playerB],
-      createdAt: new Date().toISOString()
-    };
-    this.matches.set(match.id, match);
-    return match;
+  private async setMmr(playerId: string, mode: GameMode, mmr: number): Promise<void> {
+    const rank = this.resolveRank(mode, mmr);
+    const [tier, div] = rank.split(" ");
+    await this.prisma.playerMmr.upsert({
+      where: { userId_mode: { userId: playerId, mode: mode.toUpperCase() as "RANKED" | "UNRANKED" | "FUN" } },
+      create: { userId: playerId, mode: mode.toUpperCase() as "RANKED" | "UNRANKED" | "FUN", mmr, rankTier: tier ?? rank, rankDiv: div ?? "" },
+      update: { mmr, rankTier: tier ?? rank, rankDiv: div ?? "" }
+    });
+  }
+
+  private resolveRank(mode: GameMode, mmr: number): string {
+    const matching = RANK_CONFIGS.filter((c) => c.mode === mode)
+      .sort((a, b) => b.minMmr - a.minMmr)
+      .find((c) => mmr >= c.minMmr && (c.maxMmr === undefined || mmr <= c.maxMmr));
+    return matching?.rank ?? "UNRANKED";
   }
 
   private getQueue(mode: GameMode): QueueEntry[] {
     const existing = this.queues.get(mode);
-    if (existing) {
-      return existing;
-    }
-
+    if (existing) return existing;
     const queue: QueueEntry[] = [];
     this.queues.set(mode, queue);
     return queue;
@@ -273,11 +278,13 @@ export class MatchmakingService {
 
   private removeFromQueues(playerId: string): void {
     for (const [mode, queue] of this.queues) {
-      this.queues.set(
-        mode,
-        queue.filter((entry) => entry.playerId !== playerId)
-      );
+      this.queues.set(mode, queue.filter((e) => e.playerId !== playerId));
     }
+  }
+
+  private assertMode(mode: GameMode): GameMode {
+    if (!GAME_MODES.includes(mode)) throw new BadRequestException("Unsupported game mode.");
+    return mode;
   }
 
   private toQueueStatus(playerId: string, status: PlayerStatus): QueueStatusResponse {
@@ -290,92 +297,5 @@ export class MatchmakingService {
       opponentPlayerId: status.opponentPlayerId,
       estimatedWaitSeconds: status.state === "in_queue" ? 30 : 0
     };
-  }
-
-  private ensureRatings(playerId: string): Map<GameMode, number> {
-    const existing = this.ratings.get(playerId);
-    if (existing) {
-      return existing;
-    }
-
-    const ratings = new Map<GameMode, number>();
-    for (const mode of GAME_MODES) {
-      ratings.set(mode, 1000);
-    }
-    this.ratings.set(playerId, ratings);
-    return ratings;
-  }
-
-  private getMmrValue(playerId: string, mode: GameMode): number {
-    return this.ensureRatings(playerId).get(mode) ?? 1000;
-  }
-
-  private setMmrValue(playerId: string, mode: GameMode, value: number): void {
-    this.ensureRatings(playerId).set(mode, value);
-  }
-
-  private resolveRank(mode: GameMode, mmr: number): string {
-    const matching = RANK_CONFIGS.filter((config) => config.mode === mode)
-      .sort((a, b) => b.minMmr - a.minMmr)
-      .find((config) => mmr >= config.minMmr && (config.maxMmr === undefined || mmr <= config.maxMmr));
-
-    return matching?.rank ?? "UNRANKED";
-  }
-
-  private calculateMmrDelta(mode: GameMode, outcome: MatchOutcome): number {
-    if (outcome === "draw") {
-      return 0;
-    }
-
-    const win = outcome === "win";
-    if (mode === "ranked") {
-      return win ? 32 : -24;
-    }
-    if (mode === "unranked") {
-      return win ? 10 : -8;
-    }
-
-    return win ? 5 : -4;
-  }
-
-  private getOpponentId(match: StoredMatch, playerId: string): string {
-    const opponent = match.participantIds.find((participantId) => participantId !== playerId);
-    if (!opponent) {
-      throw new BadRequestException("Match opponent not found.");
-    }
-
-    return opponent;
-  }
-
-  private addHistory(playerId: string, item: MatchHistoryItem): void {
-    const history = this.histories.get(playerId) ?? [];
-    history.unshift(item);
-    this.histories.set(playerId, history);
-  }
-
-  private assertMode(mode: GameMode): GameMode {
-    if (!GAME_MODES.includes(mode)) {
-      throw new BadRequestException("Unsupported game mode.");
-    }
-
-    return mode;
-  }
-
-  private audit(
-    actorId: string,
-    action: string,
-    targetType: string,
-    targetId?: string,
-    metadata?: Record<string, unknown>
-  ): void {
-    this.auditLogs.push({
-      id: randomUUID(),
-      actorId,
-      action,
-      targetType,
-      targetId,
-      metadata,
-      createdAt: new Date().toISOString()
-    });
   }
 }

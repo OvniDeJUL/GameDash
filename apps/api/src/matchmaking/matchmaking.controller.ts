@@ -17,7 +17,7 @@ export class MatchmakingController {
   joinQueue(
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: QueueJoinRequest
-  ): QueueStatusResponse {
+  ): Promise<QueueStatusResponse> {
     return this.matchmakingService.joinQueue(user, body);
   }
 

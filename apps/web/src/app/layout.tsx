@@ -3,14 +3,10 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "GameDash",
-  description: "GameDash web shell"
+  description: "Competitive gaming dashboard by Nebula Studio"
 };
 
-export default function RootLayout({
-  children
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>{children}</body>

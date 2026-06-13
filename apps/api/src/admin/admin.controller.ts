@@ -25,13 +25,13 @@ export class AdminController {
 
   @Get("dashboard")
   @Roles("staff", "admin")
-  getDashboard(): AdminDashboardSummary {
+  getDashboard(): Promise<AdminDashboardSummary> {
     return this.adminService.getDashboard();
   }
 
   @Get("settings")
   @Roles("staff", "admin")
-  getSettings(): StudioSettingsResponse {
+  getSettings(): Promise<StudioSettingsResponse> {
     return this.adminService.getSettings();
   }
 
@@ -40,19 +40,19 @@ export class AdminController {
   updateSettings(
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: UpdateStudioSettingsRequest
-  ): StudioSettingsResponse {
+  ): Promise<StudioSettingsResponse> {
     return this.adminService.updateSettings(user, body);
   }
 
   @Get("moderation/signals")
   @Roles("staff", "admin")
-  getModerationSignals(): ModerationSignalResponse[] {
+  getModerationSignals(): Promise<ModerationSignalResponse[]> {
     return this.adminService.getModerationSignals();
   }
 
   @Get("moderation/history")
   @Roles("staff", "admin")
-  getModerationHistory(): ModerationActionResponse[] {
+  getModerationHistory(): Promise<ModerationActionResponse[]> {
     return this.adminService.getModerationHistory();
   }
 
@@ -62,7 +62,7 @@ export class AdminController {
     @CurrentUser() user: AuthenticatedUser,
     @Param("userId") userId: string,
     @Body() body: AccountModerationRequest
-  ): ModerationActionResponse {
+  ): Promise<ModerationActionResponse> {
     return this.adminService.moderateAccount(user, userId, body);
   }
 
@@ -72,7 +72,7 @@ export class AdminController {
     @CurrentUser() user: AuthenticatedUser,
     @Param("mapId") mapId: string,
     @Body() body: MapModerationRequest
-  ): ModerationActionResponse {
+  ): Promise<ModerationActionResponse> {
     return this.adminService.moderateMap(user, mapId, body);
   }
 }
