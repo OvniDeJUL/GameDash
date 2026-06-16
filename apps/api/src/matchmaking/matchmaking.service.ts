@@ -11,6 +11,7 @@ import type {
   RankConfig
 } from "@gamedash/contracts";
 import type { AuthenticatedUser } from "../auth/auth.types";
+import { EconomyService } from "../economy/economy.service";
 import { ProgressionService } from "../progression/progression.service";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -91,7 +92,8 @@ export class MatchmakingService implements OnModuleInit {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(ProgressionService) private readonly progressionService: ProgressionService
+    @Inject(ProgressionService) private readonly progressionService: ProgressionService,
+    @Inject(EconomyService) private readonly economyService: EconomyService
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -267,6 +269,7 @@ export class MatchmakingService implements OnModuleInit {
         rankBefore: delta !== undefined ? this.resolveRank(entry.match.mode.toLowerCase() as GameMode, entry.mmrBefore ?? 0) : undefined,
         rankAfter: delta !== undefined ? this.resolveRank(entry.match.mode.toLowerCase() as GameMode, entry.mmrAfter ?? 0) : undefined,
         xpAwarded: entry.xpAwarded ?? undefined,
+        softCurrencyAwarded: undefined,
         durationSeconds,
         winnerPlayerId: entry.match.winnerUserId ?? undefined
       };
@@ -322,6 +325,8 @@ export class MatchmakingService implements OnModuleInit {
           actorId
         });
 
+        const softCurrencyAwarded = await this.economyService.awardSoftCurrency(playerId, mode, outcome, matchId);
+
         await this.prisma.matchParticipant.update({
           where: { matchId_userId: { matchId, userId: playerId } },
           data: {
@@ -340,11 +345,11 @@ export class MatchmakingService implements OnModuleInit {
             action: "mmr.update",
             targetType: "player_mmr",
             targetId: playerId ?? "",
-            metadata: { matchId, mode, mmrBefore, mmrAfter, mmrDelta: delta, rankBefore, rankAfter } as never
+            metadata: { matchId, mode, mmrBefore, mmrAfter, mmrDelta: delta, rankBefore, rankAfter, softCurrencyAwarded } as never
           }
         });
 
-        return { playerId, outcome, mmrBefore, mmrAfter, mmrDelta: delta, rankBefore, rankAfter, progression };
+        return { playerId, outcome, mmrBefore, mmrAfter, mmrDelta: delta, rankBefore, rankAfter, progression, softCurrencyAwarded };
       })
     );
 

@@ -16,6 +16,7 @@ import type {
   AuthUserResponse,
   CreatorMapStatsResponse,
   FavoriteMapRequest,
+  HardCurrencyPackage,
   InventoryItemResponse,
   LoginRequest,
   MapDetailResponse,
@@ -38,6 +39,8 @@ import type {
   RankConfig,
   RefreshRequest,
   RegisterRequest,
+  SimulatePaymentRequest,
+  SimulatePaymentResponse,
   StaffEconomyAnalyticsResponse,
   StaffMapAdminItem,
   StaffMapsAnalyticsResponse,
@@ -180,7 +183,13 @@ export const economy = {
     request<PurchaseResponse>("/economy/transactions/purchase", { method: "POST", body: JSON.stringify(data), token }),
 
   equipItem: (itemCode: string, token: string) =>
-    request<InventoryItemResponse>(`/economy/inventory/${itemCode}/equip`, { method: "PATCH", body: "{}", token })
+    request<InventoryItemResponse>(`/economy/inventory/${itemCode}/equip`, { method: "PATCH", body: "{}", token }),
+
+  getHardCurrencyPackages: (token: string) =>
+    request<HardCurrencyPackage[]>("/economy/payments/packages", { token }),
+
+  simulatePayment: (data: SimulatePaymentRequest, token: string) =>
+    request<SimulatePaymentResponse>("/economy/payments/simulate", { method: "POST", body: JSON.stringify(data), token })
 };
 
 // ─── Maps ──────────────────────────────────────────────────────────────────

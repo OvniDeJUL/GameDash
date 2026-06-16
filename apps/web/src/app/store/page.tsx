@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type {
   AuthUserResponse,
+  HardCurrencyPackage,
   StoreItem,
   WalletResponse,
   InventoryItemResponse,
@@ -29,12 +30,15 @@ export default function StorePage() {
   const [storeItems, setStoreItems] = useState<StoreItem[]>([]);
   const [inventory, setInventory] = useState<InventoryItemResponse[]>([]);
   const [transactions, setTransactions] = useState<TransactionResponse[]>([]);
+  const [hardPackages, setHardPackages] = useState<HardCurrencyPackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [buyingId, setBuyingId] = useState<string | null>(null);
   const [equippingCode, setEquippingCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [tab, setTab] = useState<"store" | "inventory" | "transactions">("store");
+  const [tab, setTab] = useState<"store" | "inventory" | "transactions" | "topup">("store");
+  const [paymentProvider, setPaymentProvider] = useState<"stripe" | "paypal">("stripe");
+  const [payingPkgId, setPayingPkgId] = useState<string | null>(null);
 
   const handleLogout = useCallback(async () => {
     await logout();
@@ -51,16 +55,18 @@ export default function StorePage() {
       try {
         const me = await withToken((t) => authApi.me(t));
         setUser(me);
-        const [walletData, itemsData, invData, txData] = await Promise.allSettled([
+        const [walletData, itemsData, invData, txData, pkgData] = await Promise.allSettled([
           withToken((t) => economy.getWallet(t)),
           withToken((t) => economy.getStoreItems(t)),
           withToken((t) => economy.getInventory(t)),
-          withToken((t) => economy.getTransactions(t))
+          withToken((t) => economy.getTransactions(t)),
+          withToken((t) => economy.getHardCurrencyPackages(t))
         ]);
         if (walletData.status === "fulfilled") setWallet(walletData.value);
         if (itemsData.status === "fulfilled") setStoreItems(itemsData.value);
         if (invData.status === "fulfilled") setInventory(invData.value);
         if (txData.status === "fulfilled") setTransactions(txData.value);
+        if (pkgData.status === "fulfilled") setHardPackages(pkgData.value);
       } catch {
         await logout();
         router.replace("/login");
@@ -91,6 +97,29 @@ export default function StorePage() {
       setError(err instanceof Error ? err.message : "Purchase failed");
     } finally {
       setBuyingId(null);
+    }
+  }
+
+  async function handleTopUp(pkg: HardCurrencyPackage) {
+    setPayingPkgId(pkg.id);
+    setError(null);
+    try {
+      const result = await withToken((t) =>
+        economy.simulatePayment({ packageId: pkg.id, provider: paymentProvider }, t)
+      );
+      if (result.accepted) {
+        setWallet(result.wallet);
+        const total = pkg.hardAmount + pkg.bonusAmount;
+        flash(`+${total} gems added via ${paymentProvider === "stripe" ? "Stripe" : "PayPal"} · ref ${result.referenceId}`);
+        const txData = await withToken((t) => economy.getTransactions(t));
+        setTransactions(txData);
+      } else {
+        setError(result.failureReason ?? "Payment declined.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Payment failed");
+    } finally {
+      setPayingPkgId(null);
     }
   }
 
@@ -155,6 +184,9 @@ export default function StorePage() {
             </button>
             <button className={`tab-btn${tab === "transactions" ? " active" : ""}`} onClick={() => setTab("transactions")}>
               Transactions ({transactions.length})
+            </button>
+            <button className={`tab-btn${tab === "topup" ? " active" : ""}`} onClick={() => setTab("topup")}>
+              Top Up 💎
             </button>
           </div>
 
@@ -278,6 +310,62 @@ export default function StorePage() {
                     </span>
                   </div>
                 ))}
+              </div>
+            </>
+          )}
+          {/* Top Up tab */}
+          {tab === "topup" && (
+            <>
+              <p className="section-title">Buy Hard Gems (simulated payment)</p>
+              <div style={{ marginBottom: "1rem", display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Provider:</span>
+                <button
+                  className={`tab-btn${paymentProvider === "stripe" ? " active" : ""}`}
+                  style={{ fontSize: "0.8rem", padding: "0.25rem 0.75rem" }}
+                  onClick={() => setPaymentProvider("stripe")}
+                >
+                  Stripe
+                </button>
+                <button
+                  className={`tab-btn${paymentProvider === "paypal" ? " active" : ""}`}
+                  style={{ fontSize: "0.8rem", padding: "0.25rem 0.75rem" }}
+                  onClick={() => setPaymentProvider("paypal")}
+                >
+                  PayPal
+                </button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxWidth: 480 }}>
+                {hardPackages.map((pkg) => {
+                  const total = pkg.hardAmount + pkg.bonusAmount;
+                  const isPaying = payingPkgId === pkg.id;
+                  return (
+                    <div key={pkg.id} className="store-item" style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "0.9rem 1rem" }}>
+                      <span style={{ fontSize: "1.4rem" }}>💎</span>
+                      <div style={{ flex: 1 }}>
+                        <div className="store-name">{pkg.label}</div>
+                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.15rem" }}>
+                          {pkg.hardAmount} gems{pkg.bonusAmount > 0 ? ` + ${pkg.bonusAmount} bonus` : ""}
+                          {" · "}
+                          <span style={{ color: "var(--purple)", fontWeight: 600 }}>{total} total</span>
+                        </div>
+                      </div>
+                      <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "1rem", color: "var(--cyan)" }}>
+                        ${pkg.priceUsd.toFixed(2)}
+                      </span>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        disabled={isPaying || payingPkgId !== null}
+                        onClick={() => handleTopUp(pkg)}
+                      >
+                        {isPaying ? "Processing…" : `Pay with ${paymentProvider === "stripe" ? "Stripe" : "PayPal"}`}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop: "1.25rem", padding: "0.75rem 1rem", background: "rgba(255,255,255,0.04)", borderRadius: "0.5rem", fontSize: "0.75rem", color: "var(--text-muted)", maxWidth: 480 }}>
+                <strong style={{ color: "var(--text-secondary)" }}>Sandbox mode</strong> — no real money is charged.
+                Payments are simulated (95% success rate). Gems are credited instantly on success.
               </div>
             </>
           )}

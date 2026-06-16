@@ -1,8 +1,11 @@
 import { Body, Controller, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import type {
+  HardCurrencyPackage,
   InventoryItemResponse,
   PurchaseRequest,
   PurchaseResponse,
+  SimulatePaymentRequest,
+  SimulatePaymentResponse,
   StoreItem,
   TransactionResponse,
   WalletResponse
@@ -54,5 +57,18 @@ export class EconomyController {
     @Param("itemCode") itemCode: string
   ): Promise<InventoryItemResponse> {
     return this.economyService.equipItem(user, itemCode);
+  }
+
+  @Get("payments/packages")
+  getHardCurrencyPackages(): HardCurrencyPackage[] {
+    return this.economyService.listHardCurrencyPackages();
+  }
+
+  @Post("payments/simulate")
+  simulatePayment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: SimulatePaymentRequest
+  ): Promise<SimulatePaymentResponse> {
+    return this.economyService.simulatePayment(user, body);
   }
 }

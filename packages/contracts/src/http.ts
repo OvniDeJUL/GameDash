@@ -135,6 +135,7 @@ export interface MatchParticipantResult {
   rankBefore: string;
   rankAfter: string;
   progression: MatchProgressionResult;
+  softCurrencyAwarded: number;
 }
 
 export interface MatchResultResponse {
@@ -172,6 +173,7 @@ export interface MatchHistoryItem {
   rankBefore?: string;
   rankAfter?: string;
   xpAwarded?: number;
+  softCurrencyAwarded?: number;
   durationSeconds?: number;
   winnerPlayerId?: string;
 }
@@ -280,6 +282,29 @@ export interface PurchaseResponse {
   transaction: TransactionResponse;
   wallet: WalletResponse;
   inventoryItem?: InventoryItemResponse;
+}
+
+export interface HardCurrencyPackage {
+  id: string;
+  label: string;
+  hardAmount: number;
+  bonusAmount: number;
+  priceUsd: number;
+}
+
+export interface SimulatePaymentRequest {
+  packageId: string;
+  provider: "stripe" | "paypal";
+}
+
+export interface SimulatePaymentResponse {
+  accepted: boolean;
+  referenceId: string;
+  provider: "stripe" | "paypal";
+  packageId: string;
+  hardCurrencyAwarded: number;
+  wallet: WalletResponse;
+  failureReason?: string;
 }
 
 export interface CreateMapRequest {

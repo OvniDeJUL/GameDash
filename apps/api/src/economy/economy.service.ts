@@ -1,9 +1,13 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "crypto";
 import type {
   CurrencyType,
+  HardCurrencyPackage,
   InventoryItemResponse,
   PurchaseRequest,
   PurchaseResponse,
+  SimulatePaymentRequest,
+  SimulatePaymentResponse,
   StoreItem,
   TransactionResponse,
   WalletResponse
@@ -13,6 +17,19 @@ import { PrismaService } from "../prisma/prisma.service";
 
 const INITIAL_SOFT_BALANCE = 1000;
 const INITIAL_HARD_BALANCE = 20;
+
+const SOFT_CURRENCY_PER_MATCH: Record<"ranked" | "unranked" | "fun", { base: number; winBonus: number }> = {
+  ranked:   { base: 50, winBonus: 25 },
+  unranked: { base: 40, winBonus: 20 },
+  fun:      { base: 25, winBonus: 10 }
+};
+
+const HARD_CURRENCY_PACKAGES: HardCurrencyPackage[] = [
+  { id: "pkg_5",   label: "Starter Pack",   hardAmount: 5,   bonusAmount: 0,  priceUsd: 4.99  },
+  { id: "pkg_10",  label: "Value Pack",      hardAmount: 10,  bonusAmount: 1,  priceUsd: 9.99  },
+  { id: "pkg_25",  label: "Plus Pack",       hardAmount: 25,  bonusAmount: 4,  priceUsd: 24.99 },
+  { id: "pkg_50",  label: "Premium Pack",    hardAmount: 50,  bonusAmount: 10, priceUsd: 49.99 }
+];
 
 /** Store catalog stays hardcoded — would move to DB for live-ops price changes. */
 const STORE_ITEMS: StoreItem[] = [
@@ -172,6 +189,116 @@ export class EconomyService {
       wallet: this.toWalletResponse(actor.id, updatedWallet),
       inventoryItem: inv
     };
+  }
+
+  listHardCurrencyPackages(): HardCurrencyPackage[] {
+    return [...HARD_CURRENCY_PACKAGES];
+  }
+
+  async simulatePayment(actor: AuthenticatedUser, body: SimulatePaymentRequest): Promise<SimulatePaymentResponse> {
+    const pkg = HARD_CURRENCY_PACKAGES.find((p) => p.id === body.packageId);
+    if (!pkg) throw new NotFoundException("Hard currency package not found.");
+
+    await new Promise((r) => setTimeout(r, 400 + Math.random() * 300));
+
+    const accepted = Math.random() < 0.95;
+    const referenceId = `${body.provider.toUpperCase()}-${randomUUID().replace(/-/g, "").substring(0, 16).toUpperCase()}`;
+    const wallet = await this.ensureWallet(actor.id);
+
+    if (!accepted) {
+      await this.audit(actor.id, "economy.payment.rejected", "wallet", actor.id, {
+        provider: body.provider,
+        packageId: pkg.id,
+        referenceId,
+        reason: "gateway_declined"
+      });
+      return {
+        accepted: false,
+        referenceId,
+        provider: body.provider,
+        packageId: pkg.id,
+        hardCurrencyAwarded: 0,
+        wallet: this.toWalletResponse(actor.id, wallet),
+        failureReason: "Payment declined by gateway (simulated)."
+      };
+    }
+
+    const totalHard = pkg.hardAmount + pkg.bonusAmount;
+    const balanceBefore = wallet.hardBalance;
+    const balanceAfter = balanceBefore + totalHard;
+
+    const updatedWallet = await this.prisma.wallet.update({
+      where: { userId: actor.id },
+      data: { hardBalance: balanceAfter }
+    });
+
+    await this.prisma.transaction.create({
+      data: {
+        userId: actor.id,
+        itemCode: pkg.id,
+        currencyType: "HARD",
+        unitPrice: totalHard,
+        quantity: 1,
+        amount: totalHard,
+        balanceBefore,
+        balanceAfter,
+        status: "ACCEPTED",
+        metadata: { provider: body.provider, referenceId, priceUsd: pkg.priceUsd } as never
+      }
+    });
+
+    await this.audit(actor.id, "economy.payment.accepted", "wallet", actor.id, {
+      provider: body.provider,
+      packageId: pkg.id,
+      referenceId,
+      totalHard,
+      balanceBefore,
+      balanceAfter
+    });
+
+    return {
+      accepted: true,
+      referenceId,
+      provider: body.provider,
+      packageId: pkg.id,
+      hardCurrencyAwarded: totalHard,
+      wallet: this.toWalletResponse(actor.id, updatedWallet)
+    };
+  }
+
+  async awardSoftCurrency(
+    userId: string,
+    mode: "ranked" | "unranked" | "fun",
+    outcome: "win" | "loss" | "draw",
+    matchId: string
+  ): Promise<number> {
+    const cfg = SOFT_CURRENCY_PER_MATCH[mode];
+    const amount = cfg.base + (outcome === "win" ? cfg.winBonus : 0);
+    const wallet = await this.ensureWallet(userId);
+    const balanceBefore = wallet.softBalance;
+    const balanceAfter = balanceBefore + amount;
+
+    await this.prisma.wallet.update({
+      where: { userId },
+      data: { softBalance: balanceAfter }
+    });
+
+    await this.prisma.transaction.create({
+      data: {
+        userId,
+        itemCode: "match_reward",
+        currencyType: "SOFT",
+        unitPrice: amount,
+        quantity: 1,
+        amount,
+        balanceBefore,
+        balanceAfter,
+        status: "ACCEPTED",
+        metadata: { matchId, mode, outcome } as never
+      }
+    });
+
+    return amount;
   }
 
   async equipItem(actor: AuthenticatedUser, itemCode: string): Promise<InventoryItemResponse> {
