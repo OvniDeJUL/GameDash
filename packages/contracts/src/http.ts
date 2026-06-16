@@ -5,7 +5,7 @@ export type RewardType = "soft_currency" | "cosmetic" | "title";
 export type CurrencyType = "soft" | "hard";
 export type TransactionStatus = "accepted" | "rejected";
 export type AccountModerationAction = "warn" | "suspend" | "ban";
-export type MapModerationAction = "hide" | "restore" | "feature";
+export type MapModerationAction = "hide" | "restore" | "feature" | "validate";
 export type ModerationTargetType = "account" | "map";
 export type ModerationSignalStatus = "open" | "reviewed" | "dismissed";
 
@@ -454,4 +454,174 @@ export interface AdminUpdatePlayerRequest {
   pseudo?: string;
   region?: string;
   bio?: string;
+}
+
+export interface StaffRankDistributionItem {
+  rank: string;
+  tier: string;
+  division: string;
+  count: number;
+  avgWinRate: number;
+}
+
+export interface StaffRankAnalyticsResponse {
+  distribution: StaffRankDistributionItem[];
+  totalRankedPlayers: number;
+  globalAvgWinRate: number;
+}
+
+export interface StaffMapAdminItem {
+  id: string;
+  title: string;
+  creatorId: string;
+  creatorPseudo?: string;
+  status: MapStatus;
+  popularityScore: number;
+  reviewStatus: string;
+  reportCount: number;
+  voteScore: number;
+  testCount: number;
+  favoriteCount: number;
+  createdAt: string;
+  updatedAt: string;
+  lastModerationAt?: string;
+}
+
+export interface StaffActiveCreator {
+  creatorId: string;
+  pseudo?: string;
+  mapCount: number;
+  totalVotes: number;
+  totalTests: number;
+}
+
+export interface StaffMapsAnalyticsResponse {
+  topPlayed: StaffMapAdminItem[];
+  topRated: StaffMapAdminItem[];
+  growing: StaffMapAdminItem[];
+  abandoned: StaffMapAdminItem[];
+  activeCreators: StaffActiveCreator[];
+}
+
+export interface StaffEconomyItemStat {
+  itemCode: string;
+  name: string;
+  salesCount: number;
+  revenue: number;
+  currencyType: CurrencyType;
+}
+
+export interface StaffEconomyAnalyticsResponse {
+  revenueToday: number;
+  revenueWeek: number;
+  salesToday: number;
+  salesWeek: number;
+  topItems: StaffEconomyItemStat[];
+}
+
+export interface AdminCreateStoreItemRequest {
+  itemCode: string;
+  name: string;
+  description?: string;
+  currencyType: CurrencyType;
+  price: number;
+  sortOrder?: number;
+}
+
+export interface AdminUpdateStoreItemRequest {
+  name?: string;
+  description?: string;
+  price?: number;
+  active?: boolean;
+  sortOrder?: number;
+}
+
+export interface AdminActivePlayerStatus {
+  playerId: string;
+  pseudo?: string;
+  state: "online" | "in_queue" | "in_match";
+  mode?: GameMode;
+  matchId?: string;
+  queuedAt?: string;
+}
+
+export interface AdminMatchParticipantDetail {
+  playerId: string;
+  pseudo?: string;
+  outcome: "win" | "loss" | "draw";
+  mmrBefore: number;
+  mmrAfter: number;
+  mmrDelta: number;
+}
+
+export interface AdminMatchDetail {
+  matchId: string;
+  mode: GameMode;
+  startedAt: string;
+  finishedAt?: string;
+  durationSeconds?: number;
+  participants: AdminMatchParticipantDetail[];
+}
+
+export interface AdminRankConfigItem {
+  id: string;
+  mode: GameMode;
+  rank: string;
+  minMmr: number;
+  maxMmr?: number;
+  sortOrder: number;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  action: string;
+  targetType: string;
+  targetId?: string;
+  actorId: string;
+  actorPseudo?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AdminTransactionJournalEntry {
+  id: string;
+  playerId: string;
+  playerPseudo?: string;
+  itemCode?: string;
+  itemName?: string;
+  currencyType: CurrencyType;
+  unitPrice: number;
+  quantity: number;
+  amount: number;
+  status: "accepted" | "rejected";
+  reason?: string;
+  createdAt: string;
+}
+
+export interface AdminSanctionEntry {
+  id: string;
+  userId: string;
+  userPseudo?: string;
+  actorId?: string;
+  actorPseudo?: string;
+  type: string;
+  reason: string;
+  status: string;
+  startedAt: string;
+  endsAt?: string;
+}
+
+export interface AdminCreateRankConfigRequest {
+  mode: GameMode;
+  rank: string;
+  minMmr: number;
+  maxMmr?: number;
+  sortOrder: number;
+}
+
+export interface AdminUpdateRankConfigRequest {
+  rank?: string;
+  minMmr?: number;
+  maxMmr?: number | null;
+  sortOrder?: number;
 }

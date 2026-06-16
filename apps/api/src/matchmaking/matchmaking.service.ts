@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException, OnModuleInit } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import type {
   GameMode,
@@ -34,13 +34,41 @@ interface PlayerStatus {
 const GAME_MODES: GameMode[] = ["ranked", "unranked", "fun"];
 
 const RANK_CONFIGS: RankConfig[] = [
-  { mode: "ranked", minMmr: 0, maxMmr: 899, rank: "BRONZE III", sortOrder: 10 },
-  { mode: "ranked", minMmr: 900, maxMmr: 1099, rank: "BRONZE II", sortOrder: 20 },
-  { mode: "ranked", minMmr: 1100, maxMmr: 1299, rank: "SILVER I", sortOrder: 30 },
-  { mode: "ranked", minMmr: 1300, maxMmr: 1599, rank: "GOLD I", sortOrder: 40 },
-  { mode: "ranked", minMmr: 1600, rank: "PLATINUM", sortOrder: 50 },
+  // ── Bronze (foundation: 0–1199) ──────────────────────────────────────────
+  { mode: "ranked", minMmr: 0,    maxMmr: 999,  rank: "Bronze III",    sortOrder: 10 },
+  { mode: "ranked", minMmr: 1000, maxMmr: 1099, rank: "Bronze II",     sortOrder: 20 },
+  { mode: "ranked", minMmr: 1100, maxMmr: 1199, rank: "Bronze I",      sortOrder: 30 },
+  // ── Silver (1200–1699) ───────────────────────────────────────────────────
+  { mode: "ranked", minMmr: 1200, maxMmr: 1299, rank: "Silver V",      sortOrder: 40 },
+  { mode: "ranked", minMmr: 1300, maxMmr: 1399, rank: "Silver IV",     sortOrder: 50 },
+  { mode: "ranked", minMmr: 1400, maxMmr: 1499, rank: "Silver III",    sortOrder: 60 },
+  { mode: "ranked", minMmr: 1500, maxMmr: 1599, rank: "Silver II",     sortOrder: 70 },
+  { mode: "ranked", minMmr: 1600, maxMmr: 1699, rank: "Silver I",      sortOrder: 80 },
+  // ── Gold (1700–2199) ─────────────────────────────────────────────────────
+  { mode: "ranked", minMmr: 1700, maxMmr: 1799, rank: "Gold V",        sortOrder: 90 },
+  { mode: "ranked", minMmr: 1800, maxMmr: 1899, rank: "Gold IV",       sortOrder: 100 },
+  { mode: "ranked", minMmr: 1900, maxMmr: 1999, rank: "Gold III",      sortOrder: 110 },
+  { mode: "ranked", minMmr: 2000, maxMmr: 2099, rank: "Gold II",       sortOrder: 120 },
+  { mode: "ranked", minMmr: 2100, maxMmr: 2199, rank: "Gold I",        sortOrder: 130 },
+  // ── Platinum (2200–2699) ─────────────────────────────────────────────────
+  { mode: "ranked", minMmr: 2200, maxMmr: 2299, rank: "Platinum V",    sortOrder: 140 },
+  { mode: "ranked", minMmr: 2300, maxMmr: 2399, rank: "Platinum IV",   sortOrder: 150 },
+  { mode: "ranked", minMmr: 2400, maxMmr: 2499, rank: "Platinum III",  sortOrder: 160 },
+  { mode: "ranked", minMmr: 2500, maxMmr: 2599, rank: "Platinum II",   sortOrder: 170 },
+  { mode: "ranked", minMmr: 2600, maxMmr: 2699, rank: "Platinum I",    sortOrder: 180 },
+  // ── Diamond (2700–3199) ──────────────────────────────────────────────────
+  { mode: "ranked", minMmr: 2700, maxMmr: 2799, rank: "Diamond V",     sortOrder: 190 },
+  { mode: "ranked", minMmr: 2800, maxMmr: 2899, rank: "Diamond IV",    sortOrder: 200 },
+  { mode: "ranked", minMmr: 2900, maxMmr: 2999, rank: "Diamond III",   sortOrder: 210 },
+  { mode: "ranked", minMmr: 3000, maxMmr: 3099, rank: "Diamond II",    sortOrder: 220 },
+  { mode: "ranked", minMmr: 3100, maxMmr: 3199, rank: "Diamond I",     sortOrder: 230 },
+  // ── Elite (3200+) ────────────────────────────────────────────────────────
+  { mode: "ranked", minMmr: 3200, maxMmr: 3699, rank: "Master",        sortOrder: 240 },
+  { mode: "ranked", minMmr: 3700, maxMmr: 4199, rank: "Grandmaster",   sortOrder: 250 },
+  { mode: "ranked", minMmr: 4200,               rank: "Challenger",    sortOrder: 260 },
+  // ── Other modes ──────────────────────────────────────────────────────────
   { mode: "unranked", minMmr: 0, rank: "UNRANKED", sortOrder: 10 },
-  { mode: "fun", minMmr: 0, rank: "CASUAL", sortOrder: 10 }
+  { mode: "fun",      minMmr: 0, rank: "CASUAL",   sortOrder: 10 }
 ];
 
 const MMR_DELTAS: Record<GameMode, { win: number; loss: number }> = {
@@ -53,16 +81,45 @@ const PLACEMENT_MMR = 1000;
 const MATCH_TIMEOUT_MS = 15_000;
 
 @Injectable()
-export class MatchmakingService {
+export class MatchmakingService implements OnModuleInit {
   /** In-memory queue — intentionally ephemeral (real-time matching). */
   private readonly queues = new Map<GameMode, QueueEntry[]>();
   private readonly statuses = new Map<string, PlayerStatus>();
   private readonly matchTimers = new Map<string, NodeJS.Timeout>();
+  /** Live rank config cache — seeded from DB, refreshed on CRUD. */
+  private cachedRanks: RankConfig[] = [...RANK_CONFIGS];
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ProgressionService) private readonly progressionService: ProgressionService
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    const count = await this.prisma.rankConfig.count();
+    if (count === 0) {
+      await this.prisma.rankConfig.createMany({
+        data: RANK_CONFIGS.map((r) => ({
+          mode: r.mode.toUpperCase() as "RANKED" | "UNRANKED" | "FUN",
+          minMmr: r.minMmr,
+          maxMmr: r.maxMmr ?? null,
+          rank: r.rank,
+          sortOrder: r.sortOrder
+        }))
+      });
+    }
+    await this.reloadRankConfigs();
+  }
+
+  async reloadRankConfigs(): Promise<void> {
+    const rows = await this.prisma.rankConfig.findMany({ orderBy: { sortOrder: "asc" } });
+    this.cachedRanks = rows.map((r) => ({
+      mode: r.mode.toLowerCase() as GameMode,
+      minMmr: r.minMmr,
+      maxMmr: r.maxMmr ?? undefined,
+      rank: r.rank,
+      sortOrder: r.sortOrder
+    }));
+  }
 
   async joinQueue(actor: AuthenticatedUser, body: QueueJoinRequest): Promise<QueueStatusResponse> {
     const mode = this.assertMode(body.mode);
@@ -119,7 +176,11 @@ export class MatchmakingService {
   }
 
   getQueueStatus(actor: AuthenticatedUser): QueueStatusResponse {
-    const status = this.statuses.get(actor.id) ?? { state: "online" as const };
+    let status = this.statuses.get(actor.id);
+    if (!status) {
+      status = { state: "online" };
+      this.statuses.set(actor.id, status);
+    }
     return this.toQueueStatus(actor.id, status);
   }
 
@@ -213,7 +274,19 @@ export class MatchmakingService {
   }
 
   getRankConfig(): RankConfig[] {
-    return [...RANK_CONFIGS];
+    return [...this.cachedRanks];
+  }
+
+  getActivePlayerStatuses(): { playerId: string; state: "online" | "in_queue" | "in_match"; mode?: GameMode; matchId?: string; queuedAt?: string }[] {
+    return [...this.statuses.entries()]
+      .filter(([, s]) => s.state !== "offline")
+      .map(([playerId, s]) => ({
+        playerId,
+        state: s.state as "online" | "in_queue" | "in_match",
+        mode: s.mode,
+        matchId: s.matchId,
+        queuedAt: s.queuedAt
+      }));
   }
 
   // ─── Private helpers ──────────────────────────────────────────────────────
@@ -266,7 +339,7 @@ export class MatchmakingService {
             actorId,
             action: "mmr.update",
             targetType: "player_mmr",
-            targetId: playerId,
+            targetId: playerId ?? "",
             metadata: { matchId, mode, mmrBefore, mmrAfter, mmrDelta: delta, rankBefore, rankAfter } as never
           }
         });
@@ -293,8 +366,8 @@ export class MatchmakingService {
     const match = await this.prisma.match.findUnique({ where: { id: matchId } });
     if (!match || match.finishedAt) return;
 
-    const winnerPlayerId = playerIds[Math.floor(Math.random() * playerIds.length)];
-    await this.finalizeMatch(matchId, winnerPlayerId, playerIds, mode, playerIds[0], "timeout");
+    const winnerPlayerId = playerIds[Math.floor(Math.random() * playerIds.length)]!;
+    await this.finalizeMatch(matchId, winnerPlayerId, playerIds, mode, playerIds[0]!, "timeout");
   }
 
   private async getMmr(playerId: string, mode: GameMode): Promise<number> {
@@ -317,7 +390,8 @@ export class MatchmakingService {
   }
 
   private resolveRank(mode: GameMode, mmr: number): string {
-    const matching = RANK_CONFIGS.filter((c) => c.mode === mode)
+    const matching = this.cachedRanks
+      .filter((c) => c.mode === mode)
       .sort((a, b) => b.minMmr - a.minMmr)
       .find((c) => mmr >= c.minMmr && (c.maxMmr === undefined || mmr <= c.maxMmr));
     return matching?.rank ?? "UNRANKED";

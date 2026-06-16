@@ -1,12 +1,27 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import type {
   AccountModerationRequest,
+  AdminActivePlayerStatus,
+  AdminCreateRankConfigRequest,
+  AdminCreateStoreItemRequest,
   AdminDashboardSummary,
+  AdminMatchDetail,
   AdminPlayerResponse,
+  AdminRankConfigItem,
+  AdminSanctionEntry,
+  AdminTransactionJournalEntry,
   AdminUpdatePlayerRequest,
+  AdminUpdateRankConfigRequest,
+  AdminUpdateStoreItemRequest,
+  AuditLogEntry,
   MapModerationRequest,
   ModerationActionResponse,
   ModerationSignalResponse,
+  StaffEconomyAnalyticsResponse,
+  StaffMapAdminItem,
+  StaffMapsAnalyticsResponse,
+  StaffRankAnalyticsResponse,
+  StoreItem,
   StudioSettingsResponse,
   UpdateStudioSettingsRequest
 } from "@gamedash/contracts";
@@ -91,5 +106,131 @@ export class AdminController {
     @Body() body: MapModerationRequest
   ): Promise<ModerationActionResponse> {
     return this.adminService.moderateMap(user, mapId, body);
+  }
+
+  // ─── Overview drill-downs ─────────────────────────────────────────────────
+
+  @Get("players/active-status")
+  @Roles("staff", "admin")
+  getActivePlayerStatuses(): Promise<AdminActivePlayerStatus[]> {
+    return this.adminService.getActivePlayerStatuses();
+  }
+
+  @Get("matches/today")
+  @Roles("staff", "admin")
+  getDailyMatches(): Promise<AdminMatchDetail[]> {
+    return this.adminService.getDailyMatches();
+  }
+
+  // ─── Staff analytics ──────────────────────────────────────────────────────
+
+  @Get("analytics/ranks")
+  @Roles("staff", "admin")
+  getRankAnalytics(): Promise<StaffRankAnalyticsResponse> {
+    return this.adminService.getRankAnalytics();
+  }
+
+  @Get("analytics/maps")
+  @Roles("staff", "admin")
+  getMapsAnalytics(): Promise<StaffMapsAnalyticsResponse> {
+    return this.adminService.getMapsAnalytics();
+  }
+
+  @Get("analytics/economy")
+  @Roles("staff", "admin")
+  getEconomyAnalytics(): Promise<StaffEconomyAnalyticsResponse> {
+    return this.adminService.getEconomyAnalytics();
+  }
+
+  // ─── Staff map management ─────────────────────────────────────────────────
+
+  @Get("maps")
+  @Roles("staff", "admin")
+  listAdminMaps(): Promise<StaffMapAdminItem[]> {
+    return this.adminService.listAdminMaps();
+  }
+
+  // ─── Staff store management ───────────────────────────────────────────────
+
+  @Get("economy/store")
+  @Roles("staff", "admin")
+  listStoreItems(): Promise<StoreItem[]> {
+    return this.adminService.listAllStoreItems();
+  }
+
+  @Post("economy/store")
+  @Roles("staff", "admin")
+  createStoreItem(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: AdminCreateStoreItemRequest
+  ): Promise<StoreItem> {
+    return this.adminService.createStoreItem(user, body);
+  }
+
+  @Patch("economy/store/:itemCode")
+  @Roles("staff", "admin")
+  updateStoreItem(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("itemCode") itemCode: string,
+    @Body() body: AdminUpdateStoreItemRequest
+  ): Promise<StoreItem> {
+    return this.adminService.updateStoreItem(user, itemCode, body);
+  }
+
+  // ─── Rank config CRUD ─────────────────────────────────────────────────────
+
+  @Get("ranks")
+  @Roles("staff", "admin")
+  listRankConfigs(): Promise<AdminRankConfigItem[]> {
+    return this.adminService.listRankConfigs();
+  }
+
+  @Post("ranks")
+  @Roles("staff", "admin")
+  createRankConfig(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: AdminCreateRankConfigRequest
+  ): Promise<AdminRankConfigItem> {
+    return this.adminService.createRankConfig(user, body);
+  }
+
+  @Patch("ranks/:id")
+  @Roles("staff", "admin")
+  updateRankConfig(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Body() body: AdminUpdateRankConfigRequest
+  ): Promise<AdminRankConfigItem> {
+    return this.adminService.updateRankConfig(user, id, body);
+  }
+
+  @Delete("ranks/:id")
+  @Roles("staff", "admin")
+  @HttpCode(204)
+  deleteRankConfig(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string
+  ): Promise<void> {
+    return this.adminService.deleteRankConfig(user, id);
+  }
+
+  // ─── Journal / audit ──────────────────────────────────────────────────────
+
+  @Get("audit/logs")
+  @Roles("staff", "admin")
+  getAuditLogs(@Query("limit") limit?: string): Promise<AuditLogEntry[]> {
+    return this.adminService.getAuditLogs(limit ? Number(limit) : undefined);
+  }
+
+  @Get("audit/transactions")
+  @Roles("staff", "admin")
+  getTransactionJournal(@Query("limit") limit?: string): Promise<AdminTransactionJournalEntry[]> {
+    return this.adminService.getTransactionJournal(limit ? Number(limit) : undefined);
+  }
+
+  @Get("audit/sanctions")
+  @Roles("staff", "admin")
+  getSanctionJournal(@Query("limit") limit?: string): Promise<AdminSanctionEntry[]> {
+    return this.adminService.getSanctionJournal(limit ? Number(limit) : undefined);
   }
 }

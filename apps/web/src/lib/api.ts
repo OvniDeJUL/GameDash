@@ -1,5 +1,17 @@
 import type {
+  AdminActivePlayerStatus,
+  AdminCreateRankConfigRequest,
+  AdminCreateStoreItemRequest,
   AdminDashboardSummary,
+  AdminMatchDetail,
+  AdminPlayerResponse,
+  AdminRankConfigItem,
+  AdminSanctionEntry,
+  AdminTransactionJournalEntry,
+  AdminUpdatePlayerRequest,
+  AdminUpdateRankConfigRequest,
+  AdminUpdateStoreItemRequest,
+  AuditLogEntry,
   AuthTokensResponse,
   AuthUserResponse,
   CreatorMapStatsResponse,
@@ -13,8 +25,12 @@ import type {
   MapSummary,
   MapVersionResponse,
   MatchHistoryItem,
+  MatchResultRequest,
+  MatchResultResponse,
   PlayerMmrResponse,
+  PlayerProfileResponse,
   PlayerProgressionResponse,
+  ProgressionRulesResponse,
   PurchaseRequest,
   PurchaseResponse,
   QueueJoinRequest,
@@ -22,25 +38,23 @@ import type {
   RankConfig,
   RefreshRequest,
   RegisterRequest,
+  StaffEconomyAnalyticsResponse,
+  StaffMapAdminItem,
+  StaffMapsAnalyticsResponse,
+  StaffRankAnalyticsResponse,
   StoreItem,
   StudioSettingsResponse,
   TestMapRequest,
   TransactionResponse,
   UpdatePlayerProfileRequest,
+  UpdateStudioSettingsRequest,
   VoteMapRequest,
   WalletResponse,
   CreateMapRequest,
   CreateMapVersionRequest,
   ModerationActionResponse,
   ModerationSignalResponse,
-  MatchResultRequest,
-  MatchResultResponse,
-  LevelReward,
-  ProgressionRulesResponse,
-  PlayerProfileResponse,
-  UpdateStudioSettingsRequest,
-  AdminPlayerResponse,
-  AdminUpdatePlayerRequest
+  LevelReward
 } from "@gamedash/contracts";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001/api/v1";
@@ -230,5 +244,53 @@ export const admin = {
     request<AdminPlayerResponse[]>("/admin/players", { token }),
 
   updatePlayer: (userId: string, data: AdminUpdatePlayerRequest, token: string) =>
-    request<AdminPlayerResponse>(`/admin/players/${userId}`, { method: "PATCH", body: JSON.stringify(data), token })
+    request<AdminPlayerResponse>(`/admin/players/${userId}`, { method: "PATCH", body: JSON.stringify(data), token }),
+
+  getRankAnalytics: (token: string) =>
+    request<StaffRankAnalyticsResponse>("/admin/analytics/ranks", { token }),
+
+  getMapsAnalytics: (token: string) =>
+    request<StaffMapsAnalyticsResponse>("/admin/analytics/maps", { token }),
+
+  getEconomyAnalytics: (token: string) =>
+    request<StaffEconomyAnalyticsResponse>("/admin/analytics/economy", { token }),
+
+  listAdminMaps: (token: string) =>
+    request<StaffMapAdminItem[]>("/admin/maps", { token }),
+
+  listStoreItems: (token: string) =>
+    request<StoreItem[]>("/admin/economy/store", { token }),
+
+  createStoreItem: (data: AdminCreateStoreItemRequest, token: string) =>
+    request<StoreItem>("/admin/economy/store", { method: "POST", body: JSON.stringify(data), token }),
+
+  updateStoreItem: (itemCode: string, data: AdminUpdateStoreItemRequest, token: string) =>
+    request<StoreItem>(`/admin/economy/store/${itemCode}`, { method: "PATCH", body: JSON.stringify(data), token }),
+
+  getActivePlayers: (token: string) =>
+    request<AdminActivePlayerStatus[]>("/admin/players/active-status", { token }),
+
+  getDailyMatches: (token: string) =>
+    request<AdminMatchDetail[]>("/admin/matches/today", { token }),
+
+  listRankConfigs: (token: string) =>
+    request<AdminRankConfigItem[]>("/admin/ranks", { token }),
+
+  createRankConfig: (data: AdminCreateRankConfigRequest, token: string) =>
+    request<AdminRankConfigItem>("/admin/ranks", { method: "POST", body: JSON.stringify(data), token }),
+
+  updateRankConfig: (id: string, data: AdminUpdateRankConfigRequest, token: string) =>
+    request<AdminRankConfigItem>(`/admin/ranks/${id}`, { method: "PATCH", body: JSON.stringify(data), token }),
+
+  deleteRankConfig: (id: string, token: string) =>
+    request<void>(`/admin/ranks/${id}`, { method: "DELETE", token }),
+
+  getAuditLogs: (token: string, limit?: number) =>
+    request<AuditLogEntry[]>(`/admin/audit/logs${limit ? `?limit=${limit}` : ""}`, { token }),
+
+  getTransactionJournal: (token: string, limit?: number) =>
+    request<AdminTransactionJournalEntry[]>(`/admin/audit/transactions${limit ? `?limit=${limit}` : ""}`, { token }),
+
+  getSanctionJournal: (token: string, limit?: number) =>
+    request<AdminSanctionEntry[]>(`/admin/audit/sanctions${limit ? `?limit=${limit}` : ""}`, { token })
 };
