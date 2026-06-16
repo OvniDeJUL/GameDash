@@ -1,7 +1,9 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
+  NotFoundException,
   UnauthorizedException
 } from "@nestjs/common";
 import { createHmac, pbkdf2Sync, randomBytes, timingSafeEqual } from "crypto";
@@ -10,6 +12,7 @@ import type {
   AuthUserResponse,
   LoginRequest,
   LogoutRequest,
+  PendingWarning,
   PlayerProfileResponse,
   RefreshRequest,
   RegisterRequest,
@@ -75,6 +78,8 @@ export class AuthService {
       throw new UnauthorizedException("Invalid email or password.");
     }
 
+    await this.assertNotSanctioned(user.id);
+
     await this.audit(user.id, "auth.login", "user", user.id);
     return this.issueTokenPair(user);
   }
@@ -89,6 +94,8 @@ export class AuthService {
     if (!token || token.revokedAt || token.expiresAt <= new Date()) {
       throw new UnauthorizedException("Refresh token is invalid or expired.");
     }
+
+    await this.assertNotSanctioned(token.userId);
 
     await this.prisma.refreshToken.update({
       where: { id: token.id },
@@ -171,7 +178,59 @@ export class AuthService {
     };
   }
 
+  /** Used by AuthGuard on every request to block sanctioned users immediately. */
+  async checkActiveSanction(userId: string): Promise<void> {
+    return this.assertNotSanctioned(userId);
+  }
+
+  async getPendingWarnings(userId: string): Promise<PendingWarning[]> {
+    const warns = await this.prisma.moderationHistory.findMany({
+      where: {
+        targetType: "account",
+        targetId: userId,
+        action: "account.warn",
+        acknowledgedAt: null
+      },
+      orderBy: { createdAt: "asc" }
+    });
+    return warns.map((w) => ({
+      id: w.id,
+      reason: w.reason,
+      actorId: w.actorId,
+      createdAt: w.createdAt.toISOString()
+    }));
+  }
+
+  async acknowledgeWarning(userId: string, warningId: string): Promise<void> {
+    const warn = await this.prisma.moderationHistory.findFirst({
+      where: { id: warningId, targetId: userId, targetType: "account", action: "account.warn" }
+    });
+    if (!warn) throw new NotFoundException("Warning not found.");
+    if (warn.acknowledgedAt) return;
+    await this.prisma.moderationHistory.update({
+      where: { id: warningId },
+      data: { acknowledgedAt: new Date() }
+    });
+  }
+
   // ─── Private helpers ──────────────────────────────────────────────────────
+
+  private async assertNotSanctioned(userId: string): Promise<void> {
+    const sanction = await this.prisma.sanction.findFirst({
+      where: {
+        userId,
+        status: "active",
+        OR: [{ endsAt: null }, { endsAt: { gt: new Date() } }]
+      }
+    });
+    if (!sanction) return;
+
+    const type = sanction.type === "BAN" ? "banned" : "suspended";
+    const until = sanction.endsAt
+      ? ` until ${sanction.endsAt.toISOString()}`
+      : " permanently";
+    throw new ForbiddenException(`Account ${type}${until}. Reason: ${sanction.reason}`);
+  }
 
   private async issueTokenPair(
     user: { id: string; email: string; role: string; profile: { pseudo: string; avatarUrl: string | null; region: string | null; bio: string | null } | null }

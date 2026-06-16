@@ -3,11 +3,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { AuthUserResponse } from "@gamedash/contracts";
+import { REGIONS } from "@gamedash/contracts";
 import { auth as authApi, players } from "../../lib/api";
 import { withToken, logout } from "../../lib/auth";
 import { Nav } from "../../components/Nav";
-
-const REGIONS = ["", "EU-West", "EU-East", "NA-East", "NA-West", "LATAM", "Asia", "OCE"];
 
 export default function AccountPage() {
   const router = useRouter();
@@ -151,8 +150,9 @@ export default function AccountPage() {
                     value={region}
                     onChange={(e) => setRegion(e.target.value)}
                   >
+                    <option value="">— None —</option>
                     {REGIONS.map((r) => (
-                      <option key={r} value={r}>{r || "— None —"}</option>
+                      <option key={r} value={r}>{r}</option>
                     ))}
                   </select>
                 </div>

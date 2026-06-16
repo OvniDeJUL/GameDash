@@ -21,7 +21,10 @@ import type {
   AuditLogEntry,
   CurrencyType,
   GameMode,
+  AdminPlayerTimeline,
+  AdminPlayerTimelineEvent,
   MapModerationRequest,
+  MapReportItem,
   MapStatus,
   ModerationActionResponse,
   ModerationSignalResponse,
@@ -43,7 +46,7 @@ import { MatchmakingService } from "../matchmaking/matchmaking.service";
 import { ProgressionService } from "../progression/progression.service";
 
 const DEFAULT_SETTINGS: StudioSettingsResponse = {
-  matchmaking: { rankedQueueMaxWaitSeconds: 90, funQueueMaxWaitSeconds: 45, matchSize: 2, maxMmrGap: 400 },
+  matchmaking: { rankedQueueMaxWaitSeconds: 90, funQueueMaxWaitSeconds: 45, matchSize: 2, maxMmrGap: 400, matchDurationSeconds: 15 },
   mmr: { placementMmr: 1000, rankedWinDelta: 32, rankedLossDelta: -24, unrankedWinDelta: 10, unrankedLossDelta: -8 },
   economy: { starterSoftBalance: 1000, starterHardBalance: 20, purchaseEnabled: true, refundWindowHours: 24 },
   rewards: {
@@ -187,6 +190,16 @@ export class AdminService {
           endsAt: expiresAt
         }
       });
+    } else if (body.action === "unban") {
+      await this.prisma.sanction.updateMany({
+        where: { userId: targetUserId, type: "BAN", status: "active" },
+        data: { status: "revoked" }
+      });
+    } else if (body.action === "unsuspend") {
+      await this.prisma.sanction.updateMany({
+        where: { userId: targetUserId, type: "SUSPENSION", status: "active" },
+        data: { status: "revoked" }
+      });
     }
 
     await this.prisma.auditLog.create({
@@ -237,6 +250,77 @@ export class AdminService {
       createdAt: r.createdAt.toISOString(),
       expiresAt: r.expiresAt?.toISOString()
     }));
+  }
+
+  async getMapReports(): Promise<MapReportItem[]> {
+    const reports = await this.prisma.mapReport.findMany({
+      where: { status: "open" },
+      include: {
+        map: { select: { title: true } },
+        reporter: { include: { profile: true } }
+      },
+      orderBy: { createdAt: "desc" }
+    });
+    return reports.map((r) => ({
+      id: r.id,
+      mapId: r.mapId,
+      mapTitle: r.map.title,
+      reporterId: r.reporterId,
+      reporterPseudo: r.reporter.profile?.pseudo ?? r.reporter.id,
+      reason: r.reason,
+      status: r.status,
+      createdAt: r.createdAt.toISOString()
+    }));
+  }
+
+  async dismissMapReport(reportId: string, action: "reviewed" | "dismissed"): Promise<void> {
+    const report = await this.prisma.mapReport.findUnique({ where: { id: reportId } });
+    if (!report) throw new NotFoundException("Report not found.");
+    await this.prisma.mapReport.update({ where: { id: reportId }, data: { status: action } });
+  }
+
+  async getPlayerTimeline(userId: string): Promise<AdminPlayerTimeline> {
+    const [modRecords, matchRecords] = await Promise.all([
+      this.prisma.moderationHistory.findMany({
+        where: { targetType: "account", targetId: userId },
+        orderBy: { createdAt: "desc" }
+      }),
+      this.prisma.matchParticipant.findMany({
+        where: { userId },
+        include: { match: true },
+        orderBy: { createdAt: "desc" }
+      })
+    ]);
+
+    const modEvents: AdminPlayerTimelineEvent[] = modRecords.map((r) => ({
+      id: r.id,
+      date: r.createdAt.toISOString(),
+      kind: "moderation" as const,
+      action: r.action,
+      reason: r.reason,
+      actorId: r.actorId
+    }));
+
+    const matchEvents: AdminPlayerTimelineEvent[] = matchRecords.map((p) => {
+      const mmrDelta = p.mmrBefore != null && p.mmrAfter != null ? p.mmrAfter - p.mmrBefore : undefined;
+      return {
+        id: p.id,
+        date: (p.match.finishedAt ?? p.createdAt).toISOString(),
+        kind: "match" as const,
+        matchId: p.matchId,
+        mode: p.match.mode.toLowerCase() as GameMode,
+        result: p.outcome?.toLowerCase(),
+        mmrBefore: p.mmrBefore ?? undefined,
+        mmrAfter: p.mmrAfter ?? undefined,
+        mmrDelta
+      };
+    });
+
+    const events = [...modEvents, ...matchEvents].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+
+    return { userId, events };
   }
 
   async listPlayers(): Promise<AdminPlayerResponse[]> {

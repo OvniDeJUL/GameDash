@@ -32,6 +32,11 @@ enum MatchOutcome {
   DRAW
 }
 
+enum MatchFormat {
+  ONE_VS_ONE
+  THREE_VS_THREE
+}
+
 enum CurrencyType {
   SOFT
   HARD
@@ -130,9 +135,11 @@ model MatchmakingQueue {
 model Match {
   id                  String             @id @default(uuid())
   mode                GameMode
+  format              MatchFormat        @default(ONE_VS_ONE)
   startedAt           DateTime           @default(now())
   finishedAt          DateTime?
   winnerUserId        String?
+  winnerTeam          Int?
   resultSubmittedById String?
   resultNotes         String?
   createdAt           DateTime           @default(now())
@@ -143,6 +150,7 @@ model MatchParticipant {
   id         String       @id @default(uuid())
   matchId    String
   userId     String
+  team       Int?
   outcome    MatchOutcome?
   mmrBefore  Int?
   mmrAfter   Int?
@@ -420,15 +428,16 @@ model ModerationSignal {
 }
 
 model ModerationHistory {
-  id         String   @id @default(uuid())
-  actorId    String
-  targetType String
-  targetId   String
-  action     String
-  reason     String
-  metadata   Json?
-  expiresAt  DateTime?
-  createdAt  DateTime @default(now())
+  id             String    @id @default(uuid())
+  actorId        String
+  targetType     String
+  targetId       String
+  action         String
+  reason         String
+  metadata       Json?
+  expiresAt      DateTime?
+  acknowledgedAt DateTime?
+  createdAt      DateTime  @default(now())
 
   @@index([targetType, targetId, createdAt])
   @@index([actorId, createdAt])

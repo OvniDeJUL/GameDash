@@ -4,10 +4,23 @@ export type MapStatus = "draft" | "beta" | "stable" | "hidden";
 export type RewardType = "soft_currency" | "cosmetic" | "title";
 export type CurrencyType = "soft" | "hard";
 export type TransactionStatus = "accepted" | "rejected";
-export type AccountModerationAction = "warn" | "suspend" | "ban";
+export type AccountModerationAction = "warn" | "suspend" | "ban" | "unban" | "unsuspend";
 export type MapModerationAction = "hide" | "restore" | "feature" | "validate";
 export type ModerationTargetType = "account" | "map";
 export type ModerationSignalStatus = "open" | "reviewed" | "dismissed";
+
+export const REGIONS = ["EU-West", "EU-East", "NA-East", "NA-West", "LATAM", "Asia", "OCE"] as const;
+export type Region = (typeof REGIONS)[number];
+
+export const REGION_CLUSTERS: Record<string, string> = {
+  "EU-West": "EU",
+  "EU-East": "EU",
+  "NA-East": "Americas",
+  "NA-West": "Americas",
+  "LATAM": "Americas",
+  "Asia": "AsiaPacific",
+  "OCE": "AsiaPacific",
+};
 
 export interface HealthResponse {
   status: "ok" | "degraded";
@@ -107,22 +120,29 @@ export interface AuthTokensResponse {
   user: AuthUserResponse;
 }
 
+export type MatchFormat = "1v1" | "3v3";
+
 export interface QueueJoinRequest {
   mode: GameMode;
+  format?: MatchFormat;
 }
 
 export interface QueueStatusResponse {
   playerId?: string;
   state: "offline" | "online" | "in_queue" | "in_match";
   mode?: GameMode;
+  format?: MatchFormat;
   estimatedWaitSeconds?: number;
   queuedAt?: string;
   matchId?: string;
   opponentPlayerId?: string;
+  teammateIds?: string[];
+  matchDurationSeconds?: number;
 }
 
 export interface MatchResultRequest {
-  winnerPlayerId: string;
+  winnerPlayerId?: string;
+  winnerTeam?: 1 | 2;
   notes?: string;
 }
 
@@ -163,9 +183,12 @@ export interface PlayerMmrResponse {
 export interface MatchHistoryItem {
   matchId: string;
   mode: GameMode;
+  format?: MatchFormat;
   createdAt: string;
   finishedAt?: string;
   result?: "win" | "loss" | "draw";
+  team?: 1 | 2;
+  teammates?: string[];
   opponentPlayerId?: string;
   mmrBefore?: number;
   mmrAfter?: number;
@@ -339,6 +362,21 @@ export interface FavoriteMapRequest {
   favorited: boolean;
 }
 
+export interface ReportMapRequest {
+  reason: string;
+}
+
+export interface MapReportItem {
+  id: string;
+  mapId: string;
+  mapTitle: string;
+  reporterId: string;
+  reporterPseudo: string;
+  reason: string;
+  status: string;
+  createdAt: string;
+}
+
 export interface ActionAcceptedResponse {
   accepted: boolean;
 }
@@ -357,6 +395,7 @@ export interface MapStatsResponse {
 export interface MapSummary {
   id: string;
   creatorId: string;
+  creatorPseudo?: string;
   title: string;
   description: string;
   tags: string[];
@@ -401,6 +440,7 @@ export interface MatchmakingSettings {
   funQueueMaxWaitSeconds: number;
   matchSize: number;
   maxMmrGap: number;
+  matchDurationSeconds: number;
 }
 
 export interface RewardSettings {
@@ -471,6 +511,13 @@ export interface ModerationActionResponse {
   expiresAt?: string;
 }
 
+export interface PendingWarning {
+  id: string;
+  reason: string;
+  actorId: string;
+  createdAt: string;
+}
+
 export interface ModerationSignalResponse {
   id: string;
   targetType: ModerationTargetType;
@@ -497,6 +544,26 @@ export interface AdminUpdatePlayerRequest {
   pseudo?: string;
   region?: string;
   bio?: string;
+}
+
+export interface AdminPlayerTimelineEvent {
+  id: string;
+  date: string;
+  kind: "moderation" | "match";
+  action?: string;
+  reason?: string;
+  actorId?: string;
+  matchId?: string;
+  mode?: GameMode;
+  result?: string;
+  mmrBefore?: number;
+  mmrAfter?: number;
+  mmrDelta?: number;
+}
+
+export interface AdminPlayerTimeline {
+  userId: string;
+  events: AdminPlayerTimelineEvent[];
 }
 
 export interface StaffRankDistributionItem {

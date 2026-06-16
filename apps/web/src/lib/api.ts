@@ -5,6 +5,7 @@ import type {
   AdminDashboardSummary,
   AdminMatchDetail,
   AdminPlayerResponse,
+  AdminPlayerTimeline,
   AdminQueueSnapshot,
   AdminRankConfigItem,
   AdminSanctionEntry,
@@ -22,6 +23,7 @@ import type {
   LoginRequest,
   MapDetailResponse,
   MapInteractionResponse,
+  MapReportItem,
   MapStatsResponse,
   MapStatus,
   MapSummary,
@@ -29,6 +31,7 @@ import type {
   MatchHistoryItem,
   MatchResultRequest,
   MatchResultResponse,
+  PendingWarning,
   PlayerMmrResponse,
   PlayerProfileResponse,
   PlayerProgressionResponse,
@@ -58,6 +61,7 @@ import type {
   CreateMapVersionRequest,
   ModerationActionResponse,
   ModerationSignalResponse,
+  ReportMapRequest,
   LevelReward
 } from "@gamedash/contracts";
 
@@ -142,7 +146,13 @@ export const players = {
     request<LevelReward[]>("/players/progression/rewards", { token }),
 
   getProgressionRules: (token: string) =>
-    request<ProgressionRulesResponse>("/players/progression/rules", { token })
+    request<ProgressionRulesResponse>("/players/progression/rules", { token }),
+
+  getPendingWarnings: (token: string) =>
+    request<PendingWarning[]>("/players/me/warnings/pending", { token }),
+
+  acknowledgeWarning: (id: string, token: string) =>
+    request<void>(`/players/me/warnings/${id}/acknowledge`, { method: "POST", body: "{}", token })
 };
 
 // ─── Matchmaking ───────────────────────────────────────────────────────────
@@ -222,6 +232,9 @@ export const maps = {
   favorite: (mapId: string, data: FavoriteMapRequest, token: string) =>
     request<MapInteractionResponse>(`/maps/${mapId}/favorites`, { method: "POST", body: JSON.stringify(data), token }),
 
+  report: (mapId: string, data: ReportMapRequest, token: string) =>
+    request<MapInteractionResponse>(`/maps/${mapId}/reports`, { method: "POST", body: JSON.stringify(data), token }),
+
   getCreatorStats: (creatorId: string, token: string) =>
     request<CreatorMapStatsResponse>(`/maps/creators/${creatorId}/stats`, { token })
 };
@@ -255,6 +268,9 @@ export const admin = {
 
   updatePlayer: (userId: string, data: AdminUpdatePlayerRequest, token: string) =>
     request<AdminPlayerResponse>(`/admin/players/${userId}`, { method: "PATCH", body: JSON.stringify(data), token }),
+
+  getPlayerTimeline: (userId: string, token: string) =>
+    request<AdminPlayerTimeline>(`/admin/players/${userId}/timeline`, { token }),
 
   getRankAnalytics: (token: string) =>
     request<StaffRankAnalyticsResponse>("/admin/analytics/ranks", { token }),
@@ -305,5 +321,11 @@ export const admin = {
     request<AdminSanctionEntry[]>(`/admin/audit/sanctions${limit ? `?limit=${limit}` : ""}`, { token }),
 
   getQueueSnapshot: (token: string) =>
-    request<AdminQueueSnapshot>("/admin/matchmaking/queue", { token })
+    request<AdminQueueSnapshot>("/admin/matchmaking/queue", { token }),
+
+  getMapReports: (token: string) =>
+    request<MapReportItem[]>("/admin/moderation/map-reports", { token }),
+
+  dismissMapReport: (id: string, action: "reviewed" | "dismissed", token: string) =>
+    request<void>(`/admin/moderation/map-reports/${id}`, { method: "PATCH", body: JSON.stringify({ action }), token })
 };

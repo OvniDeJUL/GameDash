@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type {
   AuthUserResponse,
+  MatchFormat,
+  PendingWarning,
   PlayerMmrResponse,
   PlayerProgressionResponse,
   QueueStatusResponse,
@@ -34,9 +36,11 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [queueMode, setQueueMode] = useState<GameMode>("ranked");
+  const [queueFormat, setQueueFormat] = useState<MatchFormat>("1v1");
   const [queueLoading, setQueueLoading] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [matchResult, setMatchResult] = useState<MatchHistoryItem | null>(null);
+  const [pendingWarnings, setPendingWarnings] = useState<PendingWarning[]>([]);
   const matchStartedAtRef = useRef<number | null>(null);
   const userRef = useRef<AuthUserResponse | null>(null);
 
@@ -67,16 +71,18 @@ export default function DashboardPage() {
         const me = await withToken((t) => authApi.me(t));
         setUser(me);
         userRef.current = me;
-        const [mmrData, progData, qData, matchData] = await Promise.allSettled([
+        const [mmrData, progData, qData, matchData, warnData] = await Promise.allSettled([
           withToken((t) => players.getMmr(me.id, t)),
           withToken((t) => players.getProgression(me.id, t)),
           withToken((t) => matchmaking.getStatus(t)),
-          withToken((t) => players.getMatches(me.id, t))
+          withToken((t) => players.getMatches(me.id, t)),
+          withToken((t) => players.getPendingWarnings(t))
         ]);
         if (mmrData.status === "fulfilled") setMmr(mmrData.value);
         if (progData.status === "fulfilled") setProgression(progData.value);
         if (qData.status === "fulfilled") setQueueStatus(qData.value);
         if (matchData.status === "fulfilled") setRecentMatches(matchData.value.slice(0, 5));
+        if (warnData.status === "fulfilled" && warnData.value.length > 0) setPendingWarnings(warnData.value);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load");
         await logout();
@@ -100,7 +106,7 @@ export default function DashboardPage() {
     }
     const tick = setInterval(() => {
       const elapsed = Math.floor((Date.now() - matchStartedAtRef.current!) / 1000);
-      setCountdown(Math.max(0, 15 - elapsed));
+      setCountdown(Math.max(0, (queueStatus?.matchDurationSeconds ?? 15) - elapsed));
     }, 250);
     return () => clearInterval(tick);
   }, [queueStatus?.state]);
@@ -124,7 +130,7 @@ export default function DashboardPage() {
     setQueueLoading(true);
     setMatchResult(null);
     try {
-      const s = await withToken((t) => matchmaking.joinQueue({ mode: queueMode }, t));
+      const s = await withToken((t) => matchmaking.joinQueue({ mode: queueMode, format: queueFormat }, t));
       setQueueStatus(s);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Queue error");
@@ -139,6 +145,13 @@ export default function DashboardPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Queue error");
     } finally { setQueueLoading(false); }
+  }
+
+  async function handleDismissWarning(id: string) {
+    try {
+      await withToken((t) => players.acknowledgeWarning(id, t));
+    } catch { /* ignore */ }
+    setPendingWarnings((prev) => prev.filter((w) => w.id !== id));
   }
 
   if (loading) {
@@ -159,6 +172,46 @@ export default function DashboardPage() {
   return (
     <>
       <Nav user={user} onLogout={handleLogout} />
+
+      {pendingWarnings[0] && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed", inset: 0, zIndex: 1000,
+            background: "rgba(0,0,0,0.65)",
+            display: "flex", alignItems: "center", justifyContent: "center"
+          }}
+        >
+          <div style={{
+            background: "var(--bg, #0f1117)",
+            border: "1px solid var(--red, #ef4444)",
+            borderRadius: "0.75rem",
+            padding: "2rem",
+            maxWidth: "480px",
+            width: "90%"
+          }}>
+            <h2 style={{ color: "var(--red, #ef4444)", marginTop: 0, marginBottom: "0.5rem" }}>
+              Warning from staff
+            </h2>
+            <p style={{ color: "var(--text-muted, #888)", fontSize: "0.8rem", margin: "0 0 1rem" }}>
+              {new Date(pendingWarnings[0].createdAt).toLocaleString()}
+            </p>
+            <p style={{ marginBottom: "1.5rem", lineHeight: 1.6 }}>{pendingWarnings[0].reason}</p>
+            {pendingWarnings.length > 1 && (
+              <p style={{ color: "var(--text-muted, #888)", fontSize: "0.85rem", marginBottom: "1rem" }}>
+                {pendingWarnings.length - 1} more warning{pendingWarnings.length > 2 ? "s" : ""} pending.
+              </p>
+            )}
+            <button
+              className="btn btn-primary"
+              onClick={() => handleDismissWarning(pendingWarnings[0]!.id)}
+            >
+              Acknowledge
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="page">
         {error && <div className="error-banner" role="alert">{error}</div>}
@@ -286,11 +339,18 @@ export default function DashboardPage() {
                   border: "1px solid var(--cyan)",
                   marginBottom: "0.75rem"
                 }}>
-                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted, #888)", marginBottom: "0.25rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>Match in progress</div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted, #888)", marginBottom: "0.25rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    {queueStatus.format === "3v3" ? "3v3 match in progress" : "Match in progress"}
+                  </div>
                   <div style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "2.5rem", fontWeight: 700, color: "var(--cyan)", lineHeight: 1 }}>
                     {countdown}s
                   </div>
-                  {queueStatus.opponentPlayerId && (
+                  {queueStatus.format === "3v3" && queueStatus.teammateIds && queueStatus.teammateIds.length > 0 && (
+                    <div style={{ fontSize: "0.8rem", color: "var(--text-muted, #888)", marginTop: "0.25rem" }}>
+                      teammates: {queueStatus.teammateIds.map((id) => id.slice(0, 8)).join(", ")}…
+                    </div>
+                  )}
+                  {queueStatus.format !== "3v3" && queueStatus.opponentPlayerId && (
                     <div style={{ fontSize: "0.8rem", color: "var(--text-muted, #888)", marginTop: "0.25rem" }}>
                       vs {queueStatus.opponentPlayerId.slice(0, 8)}…
                     </div>
@@ -302,7 +362,7 @@ export default function DashboardPage() {
                 <div className="queue-status">
                   <span className="queue-indicator" />
                   <div className="queue-text">
-                    <div className="queue-state">searching…</div>
+                    <div className="queue-state">searching{queueStatus.format === "3v3" ? " (3v3 — need 6 players)" : ""}…</div>
                     {queueStatus.matchId && (
                       <div className="queue-detail">Match {queueStatus.matchId.slice(0, 8)}…</div>
                     )}
@@ -321,6 +381,19 @@ export default function DashboardPage() {
                   <option value="ranked">Ranked</option>
                   <option value="unranked">Unranked</option>
                   <option value="fun">Fun</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Format</label>
+                <select
+                  className="form-input"
+                  value={queueFormat}
+                  onChange={(e) => setQueueFormat(e.target.value as MatchFormat)}
+                  disabled={queueLoading || inQueue}
+                >
+                  <option value="1v1">1v1 — Solo</option>
+                  <option value="3v3">3v3 — Team</option>
                 </select>
               </div>
 
@@ -349,6 +422,9 @@ export default function DashboardPage() {
                   <div key={match.matchId} className={`match-item ${match.result ?? ""}`}>
                     <span className={`match-result ${match.result ?? ""}`}>{match.result ?? "?"}</span>
                     <span className="match-mode">{match.mode}</span>
+                    {match.format === "3v3" && (
+                      <span className="tag tag-purple" style={{ fontSize: "0.7rem" }}>3v3</span>
+                    )}
                     {match.durationSeconds !== undefined && (
                       <span style={{ fontSize: "0.75rem", color: "var(--text-muted, #888)" }}>{match.durationSeconds}s</span>
                     )}

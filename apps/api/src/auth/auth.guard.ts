@@ -15,7 +15,7 @@ export class AuthGuard implements CanActivate {
     private readonly authService: AuthService
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const header = request.headers.authorization;
     const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : undefined;
@@ -25,6 +25,7 @@ export class AuthGuard implements CanActivate {
     }
 
     request.user = this.authService.verifyAccessToken(token);
+    await this.authService.checkActiveSanction(request.user.id);
     return true;
   }
 }

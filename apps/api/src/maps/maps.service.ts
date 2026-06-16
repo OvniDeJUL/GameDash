@@ -11,6 +11,7 @@ import type {
   MapStatus,
   MapSummary,
   MapVersionResponse,
+  ReportMapRequest,
   TestMapRequest,
   VoteMapRequest
 } from "@gamedash/contracts";
@@ -50,7 +51,8 @@ export class MapsService {
         versions: { orderBy: { createdAt: "desc" }, take: 1 },
         votes: true,
         tests: true,
-        favorites: true
+        favorites: true,
+        creator: { include: { profile: true } }
       },
       orderBy: [{ popularityScore: "desc" }, { updatedAt: "desc" }]
     });
@@ -144,6 +146,20 @@ export class MapsService {
       update: { completed: body.completed }
     });
 
+    if (!body.completed) {
+      const existing = await this.prisma.mapReport.findFirst({
+        where: { mapId, reporterId: actor.id, status: "open" }
+      });
+      if (!existing) {
+        await Promise.all([
+          this.prisma.mapReport.create({
+            data: { mapId, reporterId: actor.id, reason: "Flagged as not deployable during test review", status: "open" }
+          }),
+          this.prisma.gameMap.update({ where: { id: mapId }, data: { reportCount: { increment: 1 } } })
+        ]);
+      }
+    }
+
     await this.recalculatePopularity(mapId);
     const updated = await this.requireMap(mapId);
     return { accepted: true, map: this.toSummary(updated) };
@@ -170,6 +186,25 @@ export class MapsService {
   async getMapStats(mapId: string): Promise<MapStatsResponse> {
     const map = await this.requireMap(mapId);
     return this.calculateStats(map);
+  }
+
+  async reportMap(actor: AuthenticatedUser, mapId: string, body: ReportMapRequest): Promise<MapInteractionResponse> {
+    const map = await this.requireMap(mapId);
+    const reason = this.assertText(body.reason, "Report reason");
+
+    const existing = await this.prisma.mapReport.findFirst({
+      where: { mapId, reporterId: actor.id, status: "open" }
+    });
+    if (existing) throw new BadRequestException("You already have an open report for this map.");
+
+    await Promise.all([
+      this.prisma.mapReport.create({ data: { mapId, reporterId: actor.id, reason, status: "open" } }),
+      this.prisma.gameMap.update({ where: { id: mapId }, data: { reportCount: { increment: 1 } } })
+    ]);
+
+    await this.audit(actor.id, "map.report", "map", mapId, { reason });
+    const updated = await this.requireMap(mapId);
+    return { accepted: true, map: this.toSummary(updated) };
   }
 
   async getCreatorStats(creatorId: string): Promise<CreatorMapStatsResponse> {
@@ -204,7 +239,8 @@ export class MapsService {
         versions: { orderBy: { createdAt: "desc" } },
         votes: true,
         tests: true,
-        favorites: true
+        favorites: true,
+        creator: { include: { profile: true } }
       }
     });
     if (!map) throw new NotFoundException("Map not found.");
@@ -237,12 +273,13 @@ export class MapsService {
     const upvotes = map.votes.filter((v) => v.value === 1).length;
     const downvotes = map.votes.filter((v) => v.value === -1).length;
     const completedTests = map.tests.filter((t) => t.completed).length;
+    const failedTests = map.tests.filter((t) => !t.completed).length;
     const favorites = map.favorites.length;
     const versionCount = map.versions.length;
     const ageDays = Math.max(0, Math.floor((Date.now() - map.updatedAt.getTime()) / (1000 * 60 * 60 * 24)));
     const recencyBoost = Math.max(0, 10 - ageDays);
     const voteScore = upvotes - downvotes;
-    const popularityScore = Math.max(0, Number((voteScore * 10 + completedTests * 5 + favorites * 3 + versionCount * 2 + recencyBoost).toFixed(2)));
+    const popularityScore = Math.max(0, Number((voteScore * 10 + completedTests * 10 - failedTests * 10 + favorites * 3 + versionCount * 2 + recencyBoost).toFixed(2)));
 
     return { mapId: map.id, versionCount, voteScore, upvotes, downvotes, completedTests, favorites, popularityScore };
   }
@@ -261,10 +298,12 @@ export class MapsService {
     votes: { value: number }[];
     tests: { completed: boolean }[];
     favorites: { id: string }[];
+    creator?: { profile: { pseudo: string } | null } | null;
   }): MapSummary {
     return {
       id: map.id,
       creatorId: map.creatorId,
+      creatorPseudo: map.creator?.profile?.pseudo,
       title: map.title,
       description: map.description,
       tags: map.tags,

@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException, OnModuleIni
 import { randomUUID } from "crypto";
 import type {
   GameMode,
+  MatchFormat,
   MatchHistoryItem,
   MatchResultRequest,
   MatchResultResponse,
@@ -10,6 +11,7 @@ import type {
   QueueStatusResponse,
   RankConfig
 } from "@gamedash/contracts";
+import { REGION_CLUSTERS } from "@gamedash/contracts";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { EconomyService } from "../economy/economy.service";
 import { ProgressionService } from "../progression/progression.service";
@@ -21,15 +23,20 @@ type MatchOutcome = "win" | "loss" | "draw";
 interface QueueEntry {
   playerId: string;
   mode: GameMode;
+  format: MatchFormat;
   queuedAt: string;
+  region?: string;
 }
 
 interface PlayerStatus {
   state: PlayerState;
   mode?: GameMode;
+  format?: MatchFormat;
+  team?: 1 | 2;
   matchId?: string;
   queuedAt?: string;
   opponentPlayerId?: string;
+  teammateIds?: string[];
 }
 
 const GAME_MODES: GameMode[] = ["ranked", "unranked", "fun"];
@@ -79,18 +86,19 @@ const MMR_DELTAS: Record<GameMode, { win: number; loss: number }> = {
 };
 
 const PLACEMENT_MMR = 1000;
-const MATCH_TIMEOUT_MS = 15_000;
+const DEFAULT_MATCH_DURATION_SECONDS = 15;
 const DEFAULT_MAX_MMR_GAP = 400;
 
 @Injectable()
 export class MatchmakingService implements OnModuleInit {
-  /** In-memory queue — intentionally ephemeral (real-time matching). */
-  private readonly queues = new Map<GameMode, QueueEntry[]>();
+  /** In-memory queue — intentionally ephemeral (real-time matching). Key = "${mode}-${format}". */
+  private readonly queues = new Map<string, QueueEntry[]>();
   private readonly statuses = new Map<string, PlayerStatus>();
   private readonly matchTimers = new Map<string, NodeJS.Timeout>();
   /** Live rank config cache — seeded from DB, refreshed on CRUD. */
   private cachedRanks: RankConfig[] = [...RANK_CONFIGS];
   private cachedMaxMmrGap = DEFAULT_MAX_MMR_GAP;
+  private cachedMatchDurationSeconds = DEFAULT_MATCH_DURATION_SECONDS;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -118,8 +126,11 @@ export class MatchmakingService implements OnModuleInit {
   async reloadMatchmakingSettings(): Promise<void> {
     const row = await this.prisma.studioSetting.findUnique({ where: { key: "matchmaking" } });
     if (row?.value) {
-      const val = row.value as { maxMmrGap?: number };
+      const val = row.value as { maxMmrGap?: number; matchDurationSeconds?: number };
       if (typeof val.maxMmrGap === "number") this.cachedMaxMmrGap = val.maxMmrGap;
+      if (typeof val.matchDurationSeconds === "number" && val.matchDurationSeconds > 0) {
+        this.cachedMatchDurationSeconds = val.matchDurationSeconds;
+      }
     }
   }
 
@@ -136,19 +147,31 @@ export class MatchmakingService implements OnModuleInit {
 
   async joinQueue(actor: AuthenticatedUser, body: QueueJoinRequest): Promise<QueueStatusResponse> {
     const mode = this.assertMode(body.mode);
+    const format: MatchFormat = body.format === "3v3" ? "3v3" : "1v1";
     const current = this.statuses.get(actor.id);
 
     if (current?.state === "in_match") return this.toQueueStatus(actor.id, current);
 
     this.removeFromQueues(actor.id);
 
-    const queue = this.getQueue(mode);
+    const actorProfile = await this.prisma.playerProfile.findUnique({ where: { userId: actor.id } });
+    const actorRegion = actorProfile?.region ?? undefined;
+
+    if (format === "3v3") {
+      return this.joinQueue3v3(actor, mode, actorRegion);
+    }
+
+    // ── 1v1 ──────────────────────────────────────────────────────────────────
+    const queue = this.getQueue(mode, "1v1");
     const actorMmr = await this.getMmr(actor.id, mode);
     let opponent: QueueEntry | undefined;
     for (let i = 0; i < queue.length; i++) {
       const entry = queue[i]!;
       const opponentMmr = await this.getMmr(entry.playerId, mode);
-      if (Math.abs(opponentMmr - actorMmr) <= this.cachedMaxMmrGap) {
+      if (
+        Math.abs(opponentMmr - actorMmr) <= this.cachedMaxMmrGap &&
+        this.areRegionsCompatible(actorRegion, entry.region)
+      ) {
         opponent = entry;
         queue.splice(i, 1);
         break;
@@ -161,21 +184,20 @@ export class MatchmakingService implements OnModuleInit {
         data: {
           id: matchId,
           mode: mode.toUpperCase() as "RANKED" | "UNRANKED" | "FUN",
+          format: "ONE_VS_ONE",
           participants: {
-            createMany: {
-              data: [{ userId: actor.id }, { userId: opponent.playerId }]
-            }
+            createMany: { data: [{ userId: actor.id, team: 1 }, { userId: opponent.playerId, team: 2 }] }
           }
         }
       });
 
-      const inMatch: PlayerStatus = { state: "in_match", mode, matchId };
-      this.statuses.set(actor.id, { ...inMatch, opponentPlayerId: opponent.playerId });
-      this.statuses.set(opponent.playerId, { ...inMatch, opponentPlayerId: actor.id });
+      const inMatch: PlayerStatus = { state: "in_match", mode, format: "1v1", matchId };
+      this.statuses.set(actor.id, { ...inMatch, team: 1, opponentPlayerId: opponent.playerId });
+      this.statuses.set(opponent.playerId, { ...inMatch, team: 2, opponentPlayerId: actor.id });
 
       const timer = setTimeout(
         () => this.expireMatch(matchId, [actor.id, opponent.playerId], mode),
-        MATCH_TIMEOUT_MS
+        this.cachedMatchDurationSeconds * 1000
       );
       this.matchTimers.set(matchId, timer);
 
@@ -183,8 +205,75 @@ export class MatchmakingService implements OnModuleInit {
     }
 
     const queuedAt = new Date().toISOString();
-    queue.push({ playerId: actor.id, mode, queuedAt });
-    this.statuses.set(actor.id, { state: "in_queue", mode, queuedAt });
+    queue.push({ playerId: actor.id, mode, format: "1v1", queuedAt, region: actorRegion });
+    this.statuses.set(actor.id, { state: "in_queue", mode, format: "1v1", queuedAt });
+
+    return this.toQueueStatus(actor.id, this.statuses.get(actor.id)!);
+  }
+
+  private async joinQueue3v3(actor: AuthenticatedUser, mode: GameMode, actorRegion?: string): Promise<QueueStatusResponse> {
+    const queue = this.getQueue(mode, "3v3");
+    const actorMmr = await this.getMmr(actor.id, mode);
+
+    // Find up to 5 region-compatible candidates from queue
+    const candidates = queue.filter((e) => this.areRegionsCompatible(actorRegion, e.region));
+
+    if (candidates.length >= 5) {
+      // Pick best 5 by MMR proximity (scan at most 20 to avoid DB overload)
+      const sample = candidates.slice(0, 20);
+      const withMmr = await Promise.all(
+        sample.map(async (e) => ({ ...e, mmr: await this.getMmr(e.playerId, mode) }))
+      );
+      withMmr.sort((a, b) => Math.abs(a.mmr - actorMmr) - Math.abs(b.mmr - actorMmr));
+      const selected = withMmr.slice(0, 5);
+
+      // Remove selected from queue
+      for (const s of selected) {
+        const idx = queue.findIndex((e) => e.playerId === s.playerId);
+        if (idx !== -1) queue.splice(idx, 1);
+      }
+
+      // Sort all 6 by MMR desc for snake draft
+      const allSix = [{ playerId: actor.id, mmr: actorMmr }, ...selected.map((s) => ({ playerId: s.playerId, mmr: s.mmr }))];
+      allSix.sort((a, b) => b.mmr - a.mmr);
+
+      // Snake draft: positions 0,3,4 → team 1; positions 1,2,5 → team 2
+      const SNAKE: (1 | 2)[] = [1, 2, 2, 1, 1, 2];
+      const teamMap = new Map(allSix.map((p, i) => [p.playerId, SNAKE[i]!]));
+
+      const matchId = randomUUID();
+      await this.prisma.match.create({
+        data: {
+          id: matchId,
+          mode: mode.toUpperCase() as "RANKED" | "UNRANKED" | "FUN",
+          format: "THREE_VS_THREE",
+          participants: {
+            createMany: {
+              data: allSix.map((p) => ({ userId: p.playerId, team: teamMap.get(p.playerId)! }))
+            }
+          }
+        }
+      });
+
+      const allPlayerIds = allSix.map((p) => p.playerId);
+      for (const { playerId } of allSix) {
+        const team = teamMap.get(playerId)!;
+        const teammateIds = allSix.filter((p) => p.playerId !== playerId && teamMap.get(p.playerId) === team).map((p) => p.playerId);
+        this.statuses.set(playerId, { state: "in_match", mode, format: "3v3", matchId, team, teammateIds });
+      }
+
+      const timer = setTimeout(
+        () => this.expireMatch(matchId, allPlayerIds, mode),
+        this.cachedMatchDurationSeconds * 1000
+      );
+      this.matchTimers.set(matchId, timer);
+
+      return this.toQueueStatus(actor.id, this.statuses.get(actor.id)!);
+    }
+
+    const queuedAt = new Date().toISOString();
+    queue.push({ playerId: actor.id, mode, format: "3v3", queuedAt, region: actorRegion });
+    this.statuses.set(actor.id, { state: "in_queue", mode, format: "3v3", queuedAt });
 
     return this.toQueueStatus(actor.id, this.statuses.get(actor.id)!);
   }
@@ -227,12 +316,20 @@ export class MatchmakingService implements OnModuleInit {
     if (!participantIds.includes(actor.id)) {
       throw new BadRequestException("Only match participants can submit a result.");
     }
-    if (!participantIds.includes(body.winnerPlayerId)) {
-      throw new BadRequestException("Winner must be one of the match participants.");
-    }
 
     const mode = match.mode.toLowerCase() as GameMode;
-    return this.finalizeMatch(matchId, body.winnerPlayerId, participantIds, mode, actor.id, body.notes);
+
+    if (match.format === "THREE_VS_THREE") {
+      if (body.winnerTeam !== 1 && body.winnerTeam !== 2) {
+        throw new BadRequestException("winnerTeam must be 1 or 2 for team matches.");
+      }
+      return this.finalizeMatch(matchId, participantIds, mode, actor.id, body.notes, undefined, body.winnerTeam as 1 | 2);
+    }
+
+    if (!body.winnerPlayerId || !participantIds.includes(body.winnerPlayerId)) {
+      throw new BadRequestException("Winner must be one of the match participants.");
+    }
+    return this.finalizeMatch(matchId, participantIds, mode, actor.id, body.notes, body.winnerPlayerId);
   }
 
   async getPlayerMmr(playerId: string): Promise<PlayerMmrResponse> {
@@ -268,11 +365,15 @@ export class MatchmakingService implements OnModuleInit {
     });
 
     return entries.map((entry) => {
-      const opponent = entry.match.participants.find((p) => p.userId !== playerId);
-      const outcome = entry.outcome?.toLowerCase() as "win" | "loss" | "draw" | undefined;
-      const delta = entry.mmrAfter != null && entry.mmrBefore != null
-        ? entry.mmrAfter - entry.mmrBefore
+      const is3v3 = entry.match.format === "THREE_VS_THREE";
+      const format: MatchFormat = is3v3 ? "3v3" : "1v1";
+      const playerTeam = entry.team as 1 | 2 | null;
+      const teammates = is3v3
+        ? entry.match.participants.filter((p) => p.userId !== playerId && p.team === entry.team).map((p) => p.userId)
         : undefined;
+      const opponent = is3v3 ? undefined : entry.match.participants.find((p) => p.userId !== playerId);
+      const outcome = entry.outcome?.toLowerCase() as "win" | "loss" | "draw" | undefined;
+      const delta = entry.mmrAfter != null && entry.mmrBefore != null ? entry.mmrAfter - entry.mmrBefore : undefined;
       const durationSeconds = entry.match.finishedAt
         ? Math.round((entry.match.finishedAt.getTime() - entry.match.startedAt.getTime()) / 1000)
         : undefined;
@@ -280,6 +381,9 @@ export class MatchmakingService implements OnModuleInit {
       return {
         matchId: entry.matchId,
         mode: entry.match.mode.toLowerCase() as GameMode,
+        format,
+        team: playerTeam ?? undefined,
+        teammates,
         createdAt: entry.match.startedAt.toISOString(),
         finishedAt: entry.match.finishedAt?.toISOString(),
         result: outcome,
@@ -301,11 +405,11 @@ export class MatchmakingService implements OnModuleInit {
     return [...this.cachedRanks];
   }
 
-  getQueueEntries(): { playerId: string; mode: GameMode; queuedAt: string }[] {
-    const result: { playerId: string; mode: GameMode; queuedAt: string }[] = [];
-    for (const [mode, entries] of this.queues) {
+  getQueueEntries(): { playerId: string; mode: GameMode; format: MatchFormat; queuedAt: string }[] {
+    const result: { playerId: string; mode: GameMode; format: MatchFormat; queuedAt: string }[] = [];
+    for (const entries of this.queues.values()) {
       for (const e of entries) {
-        result.push({ playerId: e.playerId, mode, queuedAt: e.queuedAt });
+        result.push({ playerId: e.playerId, mode: e.mode, format: e.format, queuedAt: e.queuedAt });
       }
     }
     return result;
@@ -329,18 +433,29 @@ export class MatchmakingService implements OnModuleInit {
 
   private async finalizeMatch(
     matchId: string,
-    winnerPlayerId: string,
     participantIds: string[],
     mode: GameMode,
     actorId: string,
-    resultNotes?: string
+    resultNotes?: string,
+    winnerPlayerId?: string,
+    winnerTeam?: 1 | 2
   ): Promise<MatchResultResponse> {
     const finishedAt = new Date();
     const finishedAtStr = finishedAt.toISOString();
 
+    // For 3v3 fetch team assignments from DB
+    let teamMap: Map<string, number> | undefined;
+    if (winnerTeam !== undefined) {
+      const records = await this.prisma.matchParticipant.findMany({ where: { matchId } });
+      teamMap = new Map(records.map((r) => [r.userId, r.team ?? 0]));
+    }
+
     const participants = await Promise.all(
       participantIds.map(async (playerId) => {
-        const outcome: MatchOutcome = playerId === winnerPlayerId ? "win" : "loss";
+        const outcome: MatchOutcome = teamMap
+          ? (teamMap.get(playerId) === winnerTeam ? "win" : "loss")
+          : (playerId === winnerPlayerId ? "win" : "loss");
+
         const mmrBefore = await this.getMmr(playerId, mode);
         const delta = MMR_DELTAS[mode][outcome];
         const mmrAfter = Math.max(0, mmrBefore + delta);
@@ -350,24 +465,14 @@ export class MatchmakingService implements OnModuleInit {
         await this.setMmr(playerId, mode, mmrAfter);
 
         const progression = await this.progressionService.awardMatchXp({
-          playerId,
-          mode,
-          outcome,
-          matchId,
-          occurredAt: finishedAtStr,
-          actorId
+          playerId, mode, outcome, matchId, occurredAt: finishedAtStr, actorId
         });
 
         const softCurrencyAwarded = await this.economyService.awardSoftCurrency(playerId, mode, outcome, matchId);
 
         await this.prisma.matchParticipant.update({
           where: { matchId_userId: { matchId, userId: playerId } },
-          data: {
-            outcome: outcome.toUpperCase() as "WIN" | "LOSS" | "DRAW",
-            mmrBefore,
-            mmrAfter,
-            xpAwarded: progression.xpAwarded
-          }
+          data: { outcome: outcome.toUpperCase() as "WIN" | "LOSS" | "DRAW", mmrBefore, mmrAfter, xpAwarded: progression.xpAwarded }
         });
 
         this.statuses.set(playerId, { state: "online" });
@@ -377,7 +482,7 @@ export class MatchmakingService implements OnModuleInit {
             actorId,
             action: "mmr.update",
             targetType: "player_mmr",
-            targetId: playerId ?? "",
+            targetId: playerId,
             metadata: { matchId, mode, mmrBefore, mmrAfter, mmrDelta: delta, rankBefore, rankAfter, softCurrencyAwarded } as never
           }
         });
@@ -390,7 +495,8 @@ export class MatchmakingService implements OnModuleInit {
       where: { id: matchId },
       data: {
         finishedAt,
-        winnerUserId: winnerPlayerId,
+        winnerUserId: winnerPlayerId ?? null,
+        winnerTeam: winnerTeam ?? null,
         resultSubmittedById: actorId,
         ...(resultNotes ? { resultNotes } : {})
       }
@@ -404,8 +510,13 @@ export class MatchmakingService implements OnModuleInit {
     const match = await this.prisma.match.findUnique({ where: { id: matchId } });
     if (!match || match.finishedAt) return;
 
-    const winnerPlayerId = playerIds[Math.floor(Math.random() * playerIds.length)]!;
-    await this.finalizeMatch(matchId, winnerPlayerId, playerIds, mode, playerIds[0]!, "timeout");
+    if (match.format === "THREE_VS_THREE") {
+      const winnerTeam = (Math.random() < 0.5 ? 1 : 2) as 1 | 2;
+      await this.finalizeMatch(matchId, playerIds, mode, playerIds[0]!, "timeout", undefined, winnerTeam);
+    } else {
+      const winnerPlayerId = playerIds[Math.floor(Math.random() * playerIds.length)]!;
+      await this.finalizeMatch(matchId, playerIds, mode, playerIds[0]!, "timeout", winnerPlayerId);
+    }
   }
 
   private async getMmr(playerId: string, mode: GameMode): Promise<number> {
@@ -435,11 +546,12 @@ export class MatchmakingService implements OnModuleInit {
     return matching?.rank ?? "UNRANKED";
   }
 
-  private getQueue(mode: GameMode): QueueEntry[] {
-    const existing = this.queues.get(mode);
+  private getQueue(mode: GameMode, format: MatchFormat): QueueEntry[] {
+    const key = `${mode}-${format}`;
+    const existing = this.queues.get(key);
     if (existing) return existing;
     const queue: QueueEntry[] = [];
-    this.queues.set(mode, queue);
+    this.queues.set(key, queue);
     return queue;
   }
 
@@ -454,15 +566,26 @@ export class MatchmakingService implements OnModuleInit {
     return mode;
   }
 
+  private areRegionsCompatible(r1?: string, r2?: string): boolean {
+    if (!r1 || !r2) return true;
+    const c1 = REGION_CLUSTERS[r1];
+    const c2 = REGION_CLUSTERS[r2];
+    if (!c1 || !c2) return true;
+    return c1 === c2;
+  }
+
   private toQueueStatus(playerId: string, status: PlayerStatus): QueueStatusResponse {
     return {
       playerId,
       state: status.state,
       mode: status.mode,
+      format: status.format,
       queuedAt: status.queuedAt,
       matchId: status.matchId,
       opponentPlayerId: status.opponentPlayerId,
-      estimatedWaitSeconds: status.state === "in_queue" ? 30 : 0
+      teammateIds: status.teammateIds,
+      estimatedWaitSeconds: status.state === "in_queue" ? 30 : 0,
+      matchDurationSeconds: this.cachedMatchDurationSeconds
     };
   }
 }

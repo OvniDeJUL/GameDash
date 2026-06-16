@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Inject, Param, Patch, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import type {
   MatchHistoryItem,
+  PendingWarning,
   PlayerProfileResponse,
   PlayerMmrResponse,
   PlayerProgressionResponse,
@@ -31,6 +32,20 @@ export class PlayersController {
   @Get("me/profile")
   getMyProfile(@CurrentUser() user: AuthenticatedUser): Promise<PlayerProfileResponse> {
     return this.authService.getProfile(user);
+  }
+
+  @Get("me/warnings/pending")
+  getPendingWarnings(@CurrentUser() user: AuthenticatedUser): Promise<PendingWarning[]> {
+    return this.authService.getPendingWarnings(user.id);
+  }
+
+  @Post("me/warnings/:id/acknowledge")
+  @HttpCode(204)
+  acknowledgeWarning(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string
+  ): Promise<void> {
+    return this.authService.acknowledgeWarning(user.id, id);
   }
 
   @Patch("me/profile")

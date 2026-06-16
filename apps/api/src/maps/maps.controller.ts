@@ -10,6 +10,7 @@ import type {
   MapStatus,
   MapSummary,
   MapVersionResponse,
+  ReportMapRequest,
   TestMapRequest,
   VoteMapRequest
 } from "@gamedash/contracts";
@@ -90,5 +91,14 @@ export class MapsController {
     @Body() body: FavoriteMapRequest
   ): Promise<MapInteractionResponse> {
     return this.mapsService.favoriteMap(user, mapId, body);
+  }
+
+  @Post(":mapId/reports")
+  reportMap(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("mapId") mapId: string,
+    @Body() body: ReportMapRequest
+  ): Promise<MapInteractionResponse> {
+    return this.mapsService.reportMap(user, mapId, body);
   }
 }

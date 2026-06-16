@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type {
   AuthUserResponse,
   AdminActivePlayerStatus,
@@ -15,8 +16,10 @@ import type {
   AdminTransactionJournalEntry,
   AdminUpdatePlayerRequest,
   AdminCreateStoreItemRequest,
+  AdminPlayerTimeline,
   AuditLogEntry,
   GameMode,
+  MapReportItem,
   StudioSettingsResponse,
   ModerationSignalResponse,
   ModerationActionResponse,
@@ -26,9 +29,9 @@ import type {
   StaffMapAdminItem,
   StoreItem
 } from "@gamedash/contracts";
+import { REGIONS } from "@gamedash/contracts";
 import { auth as authApi, admin } from "../../lib/api";
 import { withToken, logout } from "../../lib/auth";
-import { Nav } from "../../components/Nav";
 
 type Tab = "overview" | "analytics" | "community" | "economy" | "settings" | "moderation" | "players" | "journal" | "matchmaking";
 
@@ -46,6 +49,8 @@ export default function AdminPage() {
   const [settings, setSettings] = useState<StudioSettingsResponse | null>(null);
   const [signals, setSignals] = useState<ModerationSignalResponse[]>([]);
   const [modHistory, setModHistory] = useState<ModerationActionResponse[]>([]);
+  const [mapReports, setMapReports] = useState<MapReportItem[]>([]);
+  const [mapReportsLoading, setMapReportsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("overview");
 
@@ -57,6 +62,8 @@ export default function AdminPage() {
   const [playerBusy, setPlayerBusy] = useState(false);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [playerNotice, setPlayerNotice] = useState<string | null>(null);
+  const [playerTimeline, setPlayerTimeline] = useState<AdminPlayerTimeline | null>(null);
+  const [timelineLoading, setTimelineLoading] = useState(false);
 
   // Moderation form
   const [modTargetId, setModTargetId] = useState("");
@@ -75,6 +82,7 @@ export default function AdminPage() {
   const [rankedWait, setRankedWait] = useState(90);
   const [matchSize, setMatchSize] = useState(2);
   const [maxMmrGap, setMaxMmrGap] = useState(400);
+  const [matchDurationSeconds, setMatchDurationSeconds] = useState(15);
   const [rankedWin, setRankedWin] = useState(32);
   const [rankedLoss, setRankedLoss] = useState(-24);
   const [purchaseEnabled, setPurchaseEnabled] = useState(true);
@@ -177,6 +185,7 @@ export default function AdminPage() {
           setRankedWait(s.matchmaking.rankedQueueMaxWaitSeconds);
           setMatchSize(s.matchmaking.matchSize);
           setMaxMmrGap(s.matchmaking.maxMmrGap);
+          setMatchDurationSeconds(s.matchmaking.matchDurationSeconds ?? 15);
           setRankedWin(s.mmr.rankedWinDelta);
           setRankedLoss(s.mmr.rankedLossDelta);
           setPurchaseEnabled(s.economy.purchaseEnabled);
@@ -215,6 +224,21 @@ export default function AdminPage() {
     if (next === "settings" && !ranksLoaded) handleLoadRanks();
     if (next === "journal") handleLoadJournalSubTab("transactions");
     if (next === "matchmaking") handleLoadQueueSnapshot();
+    if (next === "moderation") handleLoadMapReports();
+  }
+
+  async function handleLoadMapReports() {
+    setMapReportsLoading(true);
+    try {
+      setMapReports(await withToken((t) => admin.getMapReports(t)));
+    } catch { /* ignore */ } finally { setMapReportsLoading(false); }
+  }
+
+  async function handleDismissMapReport(id: string, action: "reviewed" | "dismissed") {
+    try {
+      await withToken((t) => admin.dismissMapReport(id, action, t));
+      setMapReports((prev) => prev.filter((r) => r.id !== id));
+    } catch { /* ignore */ }
   }
 
   async function handleLoadQueueSnapshot() {
@@ -327,6 +351,12 @@ export default function AdminPage() {
     setEditForm({ role: p.role, email: p.email, pseudo: p.pseudo ?? "", region: p.region ?? "", bio: p.bio ?? "" });
     setPlayerError(null);
     setPlayerNotice(null);
+    setPlayerTimeline(null);
+    setTimelineLoading(true);
+    withToken((t) => admin.getPlayerTimeline(p.id, t))
+      .then(setPlayerTimeline)
+      .catch(() => {/* ignore */})
+      .finally(() => setTimelineLoading(false));
   }
 
   async function handleSavePlayer(e: React.FormEvent) {
@@ -467,7 +497,7 @@ export default function AdminPage() {
     try {
       const updated = await withToken((t) =>
         admin.updateSettings({
-          matchmaking: { rankedQueueMaxWaitSeconds: rankedWait, matchSize, maxMmrGap },
+          matchmaking: { rankedQueueMaxWaitSeconds: rankedWait, matchSize, maxMmrGap, matchDurationSeconds },
           mmr: { rankedWinDelta: rankedWin, rankedLossDelta: rankedLoss },
           economy: { purchaseEnabled },
           rewards: {
@@ -537,44 +567,100 @@ export default function AdminPage() {
 
   if (loading) {
     return (
-      <>
-        <Nav user={null} onLogout={handleLogout} />
-        <main className="page" style={{ textAlign: "center", paddingTop: "4rem" }}>
-          <div style={{ color: "var(--cyan)", fontSize: "1.2rem" }}>Loading…</div>
-        </main>
-      </>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "var(--bg)" }}>
+        <div style={{ color: "var(--cyan)", fontSize: "1.2rem" }}>Loading…</div>
+      </div>
     );
   }
 
-  const openSignalCount = signals.filter((s) => s.status === "open").length;
+  const openSignalCount = signals.filter((s) => s.status === "open").length + mapReports.length;
+
+  const NAV_ITEMS: { id: Tab; icon: string; label: string }[] = [
+    { id: "overview",    icon: "📊", label: "Overview" },
+    { id: "analytics",   icon: "📈", label: "Analytics" },
+    { id: "matchmaking", icon: "⚔️",  label: "Matchmaking" },
+    { id: "community",   icon: "🗺️", label: "Community" },
+    { id: "economy",     icon: "💰", label: "Economy" },
+    { id: "players",     icon: "👥", label: "Players" },
+    { id: "moderation",  icon: "🚨", label: "Moderation" },
+    { id: "journal",     icon: "📋", label: "Journal" },
+    { id: "settings",    icon: "⚙️", label: "Settings" },
+  ];
+
+  const PAGE_TITLES: Record<Tab, string> = {
+    overview: "Overview", analytics: "Analytics", matchmaking: "Matchmaking",
+    community: "Community", economy: "Economy", players: "Players",
+    moderation: "Moderation", journal: "Journal", settings: "Settings"
+  };
 
   return (
-    <>
-      <Nav user={user} onLogout={handleLogout} />
+    <div style={{ display: "flex", minHeight: "100vh", background: "var(--bg)" }}>
 
-      <main className="page">
-        <section>
-          <p className="section-title">Studio backoffice</p>
+      {/* ── Sidebar ─────────────────────────────────────────────────────── */}
+      <aside style={{
+        position: "fixed", top: 0, left: 0, bottom: 0, width: 248,
+        background: "var(--bg-card)",
+        borderRight: "1px solid var(--border)",
+        display: "flex", flexDirection: "column", zIndex: 100, overflowY: "auto"
+      }}>
+        <Link href="/dashboard" style={{ display: "block", padding: "2rem 1.5rem 1.5rem", borderBottom: "1px solid var(--border)", textDecoration: "none" }}>
+          <div style={{ fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "0.3rem" }}>Studio</div>
+          <div style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "1.4rem", fontWeight: 700, color: "var(--cyan)", letterSpacing: "0.04em" }}>GameDash</div>
+        </Link>
 
-          <div className="tab-bar" style={{ marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.25rem" }}>
-            {(["overview", "analytics", "matchmaking", "community", "economy", "settings", "moderation", "players", "journal"] as Tab[]).map((t) => (
-              <button
-                key={t}
-                className={`tab-btn${tab === t ? " active" : ""}`}
-                onClick={() => handleTabChange(t)}
-              >
-                {t === "moderation" && openSignalCount > 0
-                  ? <>Moderation <span className="tag tag-red" style={{ marginLeft: "0.25rem" }}>{openSignalCount}</span></>
-                  : t.charAt(0).toUpperCase() + t.slice(1)
-                }
-              </button>
-            ))}
+        <nav style={{ flex: 1, padding: "1rem 0.75rem" }}>
+          {NAV_ITEMS.map(({ id, icon, label }) => (
+            <button
+              key={id}
+              onClick={() => handleTabChange(id)}
+              style={{
+                display: "flex", alignItems: "center", gap: "0.75rem",
+                width: "100%", padding: "0.7rem 0.875rem", marginBottom: "0.15rem",
+                borderRadius: "0.5rem", border: "none", cursor: "pointer",
+                fontFamily: "inherit", fontSize: "0.875rem", textAlign: "left",
+                background: tab === id ? "rgba(0,212,255,0.08)" : "transparent",
+                color: tab === id ? "var(--cyan)" : "var(--text-muted)",
+                borderLeft: tab === id ? "2px solid var(--cyan)" : "2px solid transparent",
+                transition: "background 0.15s, color 0.15s",
+              }}
+            >
+              <span style={{ width: 20, flexShrink: 0, fontSize: "1rem" }}>{icon}</span>
+              <span style={{ flex: 1, fontWeight: tab === id ? 600 : 400 }}>{label}</span>
+              {id === "moderation" && openSignalCount > 0 && (
+                <span style={{
+                  background: "var(--red)", color: "#fff",
+                  fontSize: "0.68rem", fontWeight: 700, borderRadius: "999px",
+                  padding: "0.1rem 0.4rem", minWidth: "1.2rem", textAlign: "center"
+                }}>{openSignalCount}</span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        <div style={{ padding: "1.25rem 1.5rem", borderTop: "1px solid var(--border)" }}>
+          <div style={{ fontSize: "0.85rem", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: "0.375rem", color: "var(--text-primary)" }}>
+            {user?.profile?.pseudo ?? user?.email}
           </div>
+          <div style={{ marginBottom: "1rem" }}>
+            <span className={`tag ${user?.role === "admin" ? "tag-red" : "tag-gold"}`}>{user?.role}</span>
+          </div>
+          <button className="btn" style={{ width: "100%", fontSize: "0.8rem" }} onClick={handleLogout}>Sign out</button>
+        </div>
+      </aside>
+
+      {/* ── Main content ────────────────────────────────────────────────── */}
+      <main style={{ marginLeft: 248, flex: 1, minHeight: "100vh", padding: "2.5rem 3rem", boxSizing: "border-box" as const, maxWidth: "calc(100vw - 248px)" }}>
+        <div style={{ marginBottom: "2.5rem", paddingBottom: "1.25rem", borderBottom: "1px solid var(--border)" }}>
+          <h1 style={{ margin: 0, fontSize: "1.75rem", fontFamily: "Rajdhani, sans-serif", fontWeight: 700, letterSpacing: "0.04em" }}>
+            {PAGE_TITLES[tab]}
+          </h1>
+        </div>
+        <div>
 
           {/* ── Overview ──────────────────────────────────────────────────── */}
           {tab === "overview" && dash && (
             <>
-              <div className="grid-4" style={{ marginBottom: "1.5rem" }}>
+              <div className="grid-4" style={{ marginBottom: "2rem", gap: "1.25rem" }}>
                 {/* Cliquable — active players */}
                 <div
                   className="kpi-card cyan"
@@ -605,7 +691,7 @@ export default function AdminPage() {
 
               {/* ── Drill-down : joueurs actifs ────────────────────────── */}
               {activePlayersExpanded && (
-                <div className="card" style={{ marginBottom: "1rem" }}>
+                <div className="card" style={{ marginBottom: "1.5rem" }}>
                   <div className="card-header">
                     <span className="card-title">Joueurs actifs en ce moment</span>
                     <button className="btn btn-sm" disabled={activePlayersLoading} onClick={handleRefreshActivePlayers}>
@@ -617,34 +703,34 @@ export default function AdminPage() {
                     activePlayersData.length === 0
                       ? <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Aucun joueur actif actuellement.</div>
                       : (
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
                           <thead>
                             <tr style={{ color: "var(--text-muted)", textAlign: "left" }}>
-                              <th style={{ padding: "0.4rem 0.5rem" }}>Joueur</th>
-                              <th style={{ padding: "0.4rem 0.5rem" }}>Statut</th>
-                              <th style={{ padding: "0.4rem 0.5rem" }}>Mode</th>
-                              <th style={{ padding: "0.4rem 0.5rem" }}>Match ID</th>
-                              <th style={{ padding: "0.4rem 0.5rem" }}>En file depuis</th>
+                              <th style={{ padding: "0.7rem 1rem" }}>Joueur</th>
+                              <th style={{ padding: "0.7rem 1rem" }}>Statut</th>
+                              <th style={{ padding: "0.7rem 1rem" }}>Mode</th>
+                              <th style={{ padding: "0.7rem 1rem" }}>Match ID</th>
+                              <th style={{ padding: "0.7rem 1rem" }}>En file depuis</th>
                             </tr>
                           </thead>
                           <tbody>
                             {activePlayersData.map((p) => (
                               <tr key={p.playerId} style={{ borderTop: "1px solid var(--border)" }}>
-                                <td style={{ padding: "0.4rem 0.5rem" }}>
-                                  {p.pseudo ?? <span style={{ fontFamily: "monospace", fontSize: "0.72rem", color: "var(--text-muted)" }}>{p.playerId.slice(0, 12)}…</span>}
+                                <td style={{ padding: "0.7rem 1rem" }}>
+                                  {p.pseudo ?? <span style={{ fontFamily: "monospace", fontSize: "0.78rem", color: "var(--text-muted)" }}>{p.playerId.slice(0, 12)}…</span>}
                                 </td>
-                                <td style={{ padding: "0.4rem 0.5rem" }}>
+                                <td style={{ padding: "0.7rem 1rem" }}>
                                   <span className={`tag ${p.state === "in_match" ? "tag-cyan" : p.state === "in_queue" ? "tag-gold" : "tag-purple"}`}>
                                     {{ in_match: "En match", in_queue: "En attente", online: "Connecté" }[p.state]}
                                   </span>
                                 </td>
-                                <td style={{ padding: "0.4rem 0.5rem", color: "var(--text-muted)" }}>
+                                <td style={{ padding: "0.7rem 1rem", color: "var(--text-muted)" }}>
                                   {p.mode ?? "—"}
                                 </td>
-                                <td style={{ padding: "0.4rem 0.5rem", fontFamily: "monospace", fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                                <td style={{ padding: "0.7rem 1rem", fontFamily: "monospace", fontSize: "0.78rem", color: "var(--text-muted)" }}>
                                   {p.matchId ? `${p.matchId.slice(0, 8)}…` : "—"}
                                 </td>
-                                <td style={{ padding: "0.4rem 0.5rem", color: "var(--text-muted)", fontSize: "0.78rem" }}>
+                                <td style={{ padding: "0.7rem 1rem", color: "var(--text-muted)", fontSize: "0.78rem" }}>
                                   {p.queuedAt ? new Date(p.queuedAt).toLocaleTimeString() : "—"}
                                 </td>
                               </tr>
@@ -658,7 +744,7 @@ export default function AdminPage() {
 
               {/* ── Drill-down : matchs du jour ────────────────────────── */}
               {dailyMatchesExpanded && (
-                <div className="card" style={{ marginBottom: "1rem" }}>
+                <div className="card" style={{ marginBottom: "1.5rem" }}>
                   <div className="card-header">
                     <span className="card-title">Matchs des dernières 24h</span>
                     <span className="tag tag-purple">{dailyMatchesData?.length ?? 0}</span>
@@ -668,14 +754,14 @@ export default function AdminPage() {
                     dailyMatchesData.length === 0
                       ? <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Aucun match aujourd'hui.</div>
                       : (
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
                           <thead>
                             <tr style={{ color: "var(--text-muted)", textAlign: "left" }}>
-                              <th style={{ padding: "0.4rem 0.5rem" }}>Match</th>
-                              <th style={{ padding: "0.4rem 0.5rem" }}>Mode</th>
-                              <th style={{ padding: "0.4rem 0.5rem" }}>Date</th>
-                              <th style={{ padding: "0.4rem 0.5rem" }}>Durée</th>
-                              <th style={{ padding: "0.4rem 0.5rem" }}>Résultats</th>
+                              <th style={{ padding: "0.7rem 1rem" }}>Match</th>
+                              <th style={{ padding: "0.7rem 1rem" }}>Mode</th>
+                              <th style={{ padding: "0.7rem 1rem" }}>Date</th>
+                              <th style={{ padding: "0.7rem 1rem" }}>Durée</th>
+                              <th style={{ padding: "0.7rem 1rem" }}>Résultats</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -687,21 +773,21 @@ export default function AdminPage() {
                                 : "En cours";
                               return (
                                 <tr key={m.matchId} style={{ borderTop: "1px solid var(--border)" }}>
-                                  <td style={{ padding: "0.4rem 0.5rem", fontFamily: "monospace", fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                                  <td style={{ padding: "0.7rem 1rem", fontFamily: "monospace", fontSize: "0.78rem", color: "var(--text-muted)" }}>
                                     {m.matchId.slice(0, 8)}…
                                   </td>
-                                  <td style={{ padding: "0.4rem 0.5rem" }}>
+                                  <td style={{ padding: "0.7rem 1rem" }}>
                                     <span className={`tag ${m.mode === "ranked" ? "tag-cyan" : m.mode === "unranked" ? "tag-purple" : "tag-gold"}`}>
                                       {m.mode}
                                     </span>
                                   </td>
-                                  <td style={{ padding: "0.4rem 0.5rem", color: "var(--text-muted)", fontSize: "0.78rem" }}>
+                                  <td style={{ padding: "0.7rem 1rem", color: "var(--text-muted)", fontSize: "0.78rem" }}>
                                     {new Date(m.startedAt).toLocaleTimeString()}
                                   </td>
-                                  <td style={{ padding: "0.4rem 0.5rem", color: "var(--text-muted)" }}>
+                                  <td style={{ padding: "0.7rem 1rem", color: "var(--text-muted)" }}>
                                     {durStr}
                                   </td>
-                                  <td style={{ padding: "0.4rem 0.5rem" }}>
+                                  <td style={{ padding: "0.7rem 1rem" }}>
                                     <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
                                       {winner && (
                                         <span style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
@@ -710,7 +796,7 @@ export default function AdminPage() {
                                           </span>
                                           <span className="tag tag-cyan" style={{ fontSize: "0.68rem" }}>WIN</span>
                                           <span style={{ color: "var(--green)", fontSize: "0.78rem" }}>+{winner.mmrDelta}</span>
-                                          <span style={{ color: "var(--text-muted)", fontSize: "0.72rem" }}>({winner.mmrBefore}→{winner.mmrAfter})</span>
+                                          <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>({winner.mmrBefore}→{winner.mmrAfter})</span>
                                         </span>
                                       )}
                                       {winner && loser && <span style={{ color: "var(--text-muted)" }}>vs</span>}
@@ -721,7 +807,7 @@ export default function AdminPage() {
                                           </span>
                                           <span className="tag tag-red" style={{ fontSize: "0.68rem" }}>LOSS</span>
                                           <span style={{ color: "var(--red)", fontSize: "0.78rem" }}>{loser.mmrDelta}</span>
-                                          <span style={{ color: "var(--text-muted)", fontSize: "0.72rem" }}>({loser.mmrBefore}→{loser.mmrAfter})</span>
+                                          <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>({loser.mmrBefore}→{loser.mmrAfter})</span>
                                         </span>
                                       )}
                                       {!winner && !loser && m.participants.map((p) => (
@@ -741,7 +827,7 @@ export default function AdminPage() {
                 </div>
               )}
 
-              <div className="grid-2">
+              <div className="grid-2" style={{ gap: "1.25rem" }}>
                 <div className="kpi-card" style={{ border: "1px solid var(--border)" }}>
                   <span className="kpi-icon">🚨</span>
                   <span className="kpi-value" style={{ color: "var(--orange)" }}>{dash.openModerationSignals}</span>
@@ -758,9 +844,9 @@ export default function AdminPage() {
 
           {/* ── Matchmaking ───────────────────────────────────────────────── */}
           {tab === "matchmaking" && (
-            <div style={{ display: "grid", gap: "1.5rem" }}>
+            <div style={{ display: "grid", gap: "2rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-                <span style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>
+                <span style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>
                   MMR gap limit: <strong style={{ color: "var(--cyan)" }}>{queueSnapshot?.maxMmrGap ?? "…"}</strong>
                   {" · "}Team size: <strong style={{ color: "var(--cyan)" }}>{queueSnapshot?.teamSize ?? "…"}</strong>
                 </span>
@@ -780,28 +866,28 @@ export default function AdminPage() {
                   : queueSnapshot?.inQueue.length === 0
                     ? <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Queue empty.</div>
                     : (
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
                         <thead>
                           <tr style={{ color: "var(--text-muted)", textAlign: "left" }}>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Player</th>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Mode</th>
-                            <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>MMR</th>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Rank</th>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>In queue since</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Player</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Mode</th>
+                            <th style={{ padding: "0.7rem 1rem", textAlign: "right" }}>MMR</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Rank</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>In queue since</th>
                           </tr>
                         </thead>
                         <tbody>
                           {queueSnapshot?.inQueue.map((entry) => (
                             <tr key={entry.playerId} style={{ borderTop: "1px solid var(--border)" }}>
-                              <td style={{ padding: "0.4rem 0.5rem" }}>
-                                {entry.pseudo ?? <span style={{ fontFamily: "monospace", fontSize: "0.72rem", color: "var(--text-muted)" }}>{entry.playerId.slice(0, 8)}</span>}
+                              <td style={{ padding: "0.7rem 1rem" }}>
+                                {entry.pseudo ?? <span style={{ fontFamily: "monospace", fontSize: "0.78rem", color: "var(--text-muted)" }}>{entry.playerId.slice(0, 8)}</span>}
                               </td>
-                              <td style={{ padding: "0.4rem 0.5rem" }}>
+                              <td style={{ padding: "0.7rem 1rem" }}>
                                 <span className={`tag ${entry.mode === "ranked" ? "tag-cyan" : entry.mode === "unranked" ? "tag-purple" : "tag-gold"}`}>{entry.mode}</span>
                               </td>
-                              <td style={{ padding: "0.4rem 0.5rem", textAlign: "right", fontFamily: "monospace" }}>{entry.mmr}</td>
-                              <td style={{ padding: "0.4rem 0.5rem" }}>{entry.rank}</td>
-                              <td style={{ padding: "0.4rem 0.5rem", color: "var(--text-muted)", fontSize: "0.75rem" }}>
+                              <td style={{ padding: "0.7rem 1rem", textAlign: "right", fontFamily: "monospace" }}>{entry.mmr}</td>
+                              <td style={{ padding: "0.7rem 1rem" }}>{entry.rank}</td>
+                              <td style={{ padding: "0.7rem 1rem", color: "var(--text-muted)", fontSize: "0.75rem" }}>
                                 {new Date(entry.queuedAt).toLocaleTimeString()}
                               </td>
                             </tr>
@@ -826,15 +912,15 @@ export default function AdminPage() {
                         <div key={match.matchId} style={{ border: "1px solid var(--border)", borderRadius: "0.5rem", padding: "0.75rem 1rem" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
                             <span className={`tag ${match.mode === "ranked" ? "tag-cyan" : match.mode === "unranked" ? "tag-purple" : "tag-gold"}`}>{match.mode}</span>
-                            <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>{match.matchId.slice(0, 12)}…</span>
-                            <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>{new Date(match.startedAt).toLocaleTimeString()}</span>
-                            <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>· {match.teamSize}v{match.teamSize}</span>
+                            <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>{match.matchId.slice(0, 12)}…</span>
+                            <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>{new Date(match.startedAt).toLocaleTimeString()}</span>
+                            <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>· {match.teamSize}v{match.teamSize}</span>
                           </div>
                           <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
                             {match.participants.map((p, i) => (
-                              <div key={p.playerId} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.82rem" }}>
+                              <div key={p.playerId} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.875rem" }}>
                                 {i > 0 && <span style={{ color: "var(--text-muted)", marginRight: "0.75rem" }}>vs</span>}
-                                <span>{p.pseudo ?? <span style={{ fontFamily: "monospace", fontSize: "0.72rem", color: "var(--text-muted)" }}>{p.playerId.slice(0, 8)}</span>}</span>
+                                <span>{p.pseudo ?? <span style={{ fontFamily: "monospace", fontSize: "0.78rem", color: "var(--text-muted)" }}>{p.playerId.slice(0, 8)}</span>}</span>
                                 <span style={{ fontFamily: "monospace", color: "var(--cyan)", fontSize: "0.78rem" }}>{p.mmr}</span>
                                 <span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>{p.rank}</span>
                               </div>
@@ -854,11 +940,11 @@ export default function AdminPage() {
             analyticsLoading
               ? <div style={{ color: "var(--cyan)", padding: "2rem 0" }}>Loading analytics…</div>
               : (
-                <div style={{ display: "grid", gap: "1.5rem" }}>
+                <div style={{ display: "grid", gap: "2rem" }}>
                   {/* Economy KPIs */}
                   {economyAnalytics && (
                     <>
-                      <div className="grid-4">
+                      <div className="grid-4" style={{ gap: "1.25rem" }}>
                         <div className="kpi-card gold"><span className="kpi-icon">💰</span><span className="kpi-value">{economyAnalytics.revenueToday.toLocaleString()}</span><span className="kpi-label">Revenue today</span></div>
                         <div className="kpi-card gold"><span className="kpi-icon">📈</span><span className="kpi-value">{economyAnalytics.revenueWeek.toLocaleString()}</span><span className="kpi-label">Revenue (7d)</span></div>
                         <div className="kpi-card cyan"><span className="kpi-icon">🛒</span><span className="kpi-value">{economyAnalytics.salesToday.toLocaleString()}</span><span className="kpi-label">Sales today</span></div>
@@ -870,22 +956,22 @@ export default function AdminPage() {
                         {economyAnalytics.topItems.length === 0
                           ? <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>No sales yet.</div>
                           : (
-                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
                               <thead>
                                 <tr style={{ color: "var(--text-muted)", textAlign: "left" }}>
-                                  <th style={{ padding: "0.4rem 0.5rem" }}>Item</th>
-                                  <th style={{ padding: "0.4rem 0.5rem" }}>Currency</th>
-                                  <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>Sales</th>
-                                  <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>Revenue</th>
+                                  <th style={{ padding: "0.7rem 1rem" }}>Item</th>
+                                  <th style={{ padding: "0.7rem 1rem" }}>Currency</th>
+                                  <th style={{ padding: "0.7rem 1rem", textAlign: "right" }}>Sales</th>
+                                  <th style={{ padding: "0.7rem 1rem", textAlign: "right" }}>Revenue</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {economyAnalytics.topItems.map((item) => (
                                   <tr key={item.itemCode} style={{ borderTop: "1px solid var(--border)" }}>
-                                    <td style={{ padding: "0.4rem 0.5rem" }}>{item.name}<span style={{ color: "var(--text-muted)", marginLeft: "0.4rem", fontSize: "0.72rem" }}>{item.itemCode}</span></td>
-                                    <td style={{ padding: "0.4rem 0.5rem" }}><span className={`tag ${item.currencyType === "hard" ? "tag-gold" : "tag-cyan"}`}>{item.currencyType}</span></td>
-                                    <td style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>{item.salesCount}</td>
-                                    <td style={{ padding: "0.4rem 0.5rem", textAlign: "right", fontWeight: 600 }}>{item.revenue.toLocaleString()}</td>
+                                    <td style={{ padding: "0.7rem 1rem" }}>{item.name}<span style={{ color: "var(--text-muted)", marginLeft: "0.4rem", fontSize: "0.78rem" }}>{item.itemCode}</span></td>
+                                    <td style={{ padding: "0.7rem 1rem" }}><span className={`tag ${item.currencyType === "hard" ? "tag-gold" : "tag-cyan"}`}>{item.currencyType}</span></td>
+                                    <td style={{ padding: "0.7rem 1rem", textAlign: "right" }}>{item.salesCount}</td>
+                                    <td style={{ padding: "0.7rem 1rem", textAlign: "right", fontWeight: 600 }}>{item.revenue.toLocaleString()}</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -908,13 +994,13 @@ export default function AdminPage() {
                       {rankAnalytics.distribution.length === 0
                         ? <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>No ranked data yet.</div>
                         : (
-                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
                             <thead>
                               <tr style={{ color: "var(--text-muted)", textAlign: "left" }}>
-                                <th style={{ padding: "0.4rem 0.5rem" }}>Rank</th>
-                                <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>Players</th>
-                                <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>Share</th>
-                                <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>Avg win rate</th>
+                                <th style={{ padding: "0.7rem 1rem" }}>Rank</th>
+                                <th style={{ padding: "0.7rem 1rem", textAlign: "right" }}>Players</th>
+                                <th style={{ padding: "0.7rem 1rem", textAlign: "right" }}>Share</th>
+                                <th style={{ padding: "0.7rem 1rem", textAlign: "right" }}>Avg win rate</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -924,9 +1010,9 @@ export default function AdminPage() {
                                   : 0;
                                 return (
                                   <tr key={d.rank} style={{ borderTop: "1px solid var(--border)" }}>
-                                    <td style={{ padding: "0.4rem 0.5rem", fontWeight: 500 }}>{d.rank}</td>
-                                    <td style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>{d.count}</td>
-                                    <td style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>
+                                    <td style={{ padding: "0.7rem 1rem", fontWeight: 500 }}>{d.rank}</td>
+                                    <td style={{ padding: "0.7rem 1rem", textAlign: "right" }}>{d.count}</td>
+                                    <td style={{ padding: "0.7rem 1rem", textAlign: "right" }}>
                                       <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", justifyContent: "flex-end" }}>
                                         <div style={{ width: 60, height: 4, background: "var(--border)", borderRadius: 2, overflow: "hidden" }}>
                                           <div style={{ width: `${share}%`, height: "100%", background: "var(--cyan)", borderRadius: 2 }} />
@@ -934,7 +1020,7 @@ export default function AdminPage() {
                                         {share}%
                                       </div>
                                     </td>
-                                    <td style={{ padding: "0.4rem 0.5rem", textAlign: "right", color: d.avgWinRate >= 50 ? "var(--green)" : "var(--text-muted)" }}>
+                                    <td style={{ padding: "0.7rem 1rem", textAlign: "right", color: d.avgWinRate >= 50 ? "var(--green)" : "var(--text-muted)" }}>
                                       {d.avgWinRate}%
                                     </td>
                                   </tr>
@@ -955,7 +1041,7 @@ export default function AdminPage() {
             communityLoading
               ? <div style={{ color: "var(--cyan)", padding: "2rem 0" }}>Loading community data…</div>
               : (
-                <div style={{ display: "grid", gap: "1.5rem" }}>
+                <div style={{ display: "grid", gap: "2rem" }}>
                   {communityNotice && <div className="success-banner">{communityNotice}</div>}
                   {communityError && <div className="error-banner">{communityError}</div>}
 
@@ -983,37 +1069,37 @@ export default function AdminPage() {
                       {adminMaps.length === 0
                         ? <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>No maps found.</div>
                         : (
-                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.79rem" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
                             <thead>
                               <tr style={{ color: "var(--text-muted)", textAlign: "left" }}>
-                                <th style={{ padding: "0.4rem 0.5rem" }}>Title</th>
-                                <th style={{ padding: "0.4rem 0.5rem" }}>Creator</th>
-                                <th style={{ padding: "0.4rem 0.5rem" }}>Status</th>
-                                <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>Votes</th>
-                                <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>Tests</th>
-                                <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>Reports</th>
-                                <th style={{ padding: "0.4rem 0.5rem" }}>Actions</th>
+                                <th style={{ padding: "0.7rem 1rem" }}>Title</th>
+                                <th style={{ padding: "0.7rem 1rem" }}>Creator</th>
+                                <th style={{ padding: "0.7rem 1rem" }}>Status</th>
+                                <th style={{ padding: "0.7rem 1rem", textAlign: "right" }}>Votes</th>
+                                <th style={{ padding: "0.7rem 1rem", textAlign: "right" }}>Tests</th>
+                                <th style={{ padding: "0.7rem 1rem", textAlign: "right" }}>Reports</th>
+                                <th style={{ padding: "0.7rem 1rem" }}>Actions</th>
                               </tr>
                             </thead>
                             <tbody>
                               {adminMaps.map((m) => (
                                 <tr key={m.id} style={{ borderTop: "1px solid var(--border)" }}>
-                                  <td style={{ padding: "0.4rem 0.5rem", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  <td style={{ padding: "0.7rem 1rem", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     {m.reviewStatus === "featured" && <span style={{ color: "var(--gold)", marginRight: "0.25rem" }}>⭐</span>}
                                     {m.title}
                                   </td>
-                                  <td style={{ padding: "0.4rem 0.5rem", color: "var(--text-muted)" }}>{m.creatorPseudo ?? m.creatorId.slice(0, 8)}</td>
-                                  <td style={{ padding: "0.4rem 0.5rem" }}>
+                                  <td style={{ padding: "0.7rem 1rem", color: "var(--text-muted)" }}>{m.creatorPseudo ?? m.creatorId.slice(0, 8)}</td>
+                                  <td style={{ padding: "0.7rem 1rem" }}>
                                     <span className={`tag ${STATUS_COLORS[m.status] ?? "tag-cyan"}`}>{m.status}</span>
                                   </td>
-                                  <td style={{ padding: "0.4rem 0.5rem", textAlign: "right", color: m.voteScore > 0 ? "var(--green)" : m.voteScore < 0 ? "var(--red)" : undefined }}>
+                                  <td style={{ padding: "0.7rem 1rem", textAlign: "right", color: m.voteScore > 0 ? "var(--green)" : m.voteScore < 0 ? "var(--red)" : undefined }}>
                                     {m.voteScore > 0 ? "+" : ""}{m.voteScore}
                                   </td>
-                                  <td style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>{m.testCount}</td>
-                                  <td style={{ padding: "0.4rem 0.5rem", textAlign: "right", color: m.reportCount > 0 ? "var(--red)" : undefined }}>
+                                  <td style={{ padding: "0.7rem 1rem", textAlign: "right" }}>{m.testCount}</td>
+                                  <td style={{ padding: "0.7rem 1rem", textAlign: "right", color: m.reportCount > 0 ? "var(--red)" : undefined }}>
                                     {m.reportCount > 0 ? `⚠ ${m.reportCount}` : m.reportCount}
                                   </td>
-                                  <td style={{ padding: "0.4rem 0.5rem" }}>
+                                  <td style={{ padding: "0.7rem 1rem" }}>
                                     <div style={{ display: "flex", gap: "0.25rem", flexWrap: "wrap" }}>
                                       <button className="btn btn-sm" title="Feature" disabled={communityBusy} onClick={() => handleMapQuickAction(m.id, "feature", "Featured by staff")}>⭐</button>
                                       <button className="btn btn-sm" title="Validate (→ stable)" disabled={communityBusy} onClick={() => handleMapQuickAction(m.id, "validate", "Approved by staff")}>✓</button>
@@ -1056,10 +1142,10 @@ export default function AdminPage() {
                           : (
                             <div style={{ display: "grid", gap: "0.5rem" }}>
                               {items.map((m) => (
-                                <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.4rem 0.5rem", borderRadius: "0.375rem", border: "1px solid var(--border)", fontSize: "0.82rem" }}>
+                                <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.7rem 1rem", borderRadius: "0.375rem", border: "1px solid var(--border)", fontSize: "0.875rem" }}>
                                   <span className={`tag ${STATUS_COLORS[m.status] ?? "tag-cyan"}`}>{m.status}</span>
                                   <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.title}</span>
-                                  <span style={{ color: "var(--text-muted)", fontSize: "0.72rem" }}>{m.creatorPseudo ?? m.creatorId.slice(0, 8)}</span>
+                                  <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>{m.creatorPseudo ?? m.creatorId.slice(0, 8)}</span>
                                   <span style={{ color: m.voteScore >= 0 ? "var(--green)" : "var(--red)", minWidth: 32, textAlign: "right" }}>{m.voteScore > 0 ? "+" : ""}{m.voteScore}</span>
                                   <span style={{ color: "var(--text-muted)", minWidth: 48, textAlign: "right" }}>{m.testCount} tests</span>
                                   <div style={{ display: "flex", gap: "0.25rem" }}>
@@ -1086,25 +1172,25 @@ export default function AdminPage() {
                       {mapsAnalytics.activeCreators.length === 0
                         ? <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>No creators yet.</div>
                         : (
-                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
                             <thead>
                               <tr style={{ color: "var(--text-muted)", textAlign: "left" }}>
-                                <th style={{ padding: "0.4rem 0.5rem" }}>Creator</th>
-                                <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>Maps</th>
-                                <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>Votes</th>
-                                <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>Tests</th>
+                                <th style={{ padding: "0.7rem 1rem" }}>Creator</th>
+                                <th style={{ padding: "0.7rem 1rem", textAlign: "right" }}>Maps</th>
+                                <th style={{ padding: "0.7rem 1rem", textAlign: "right" }}>Votes</th>
+                                <th style={{ padding: "0.7rem 1rem", textAlign: "right" }}>Tests</th>
                               </tr>
                             </thead>
                             <tbody>
                               {mapsAnalytics.activeCreators.map((c, i) => (
                                 <tr key={c.creatorId} style={{ borderTop: "1px solid var(--border)" }}>
-                                  <td style={{ padding: "0.4rem 0.5rem" }}>
-                                    <span style={{ color: "var(--text-muted)", marginRight: "0.5rem", fontSize: "0.72rem" }}>#{i + 1}</span>
-                                    {c.pseudo ?? <span style={{ fontFamily: "monospace", fontSize: "0.72rem" }}>{c.creatorId.slice(0, 12)}</span>}
+                                  <td style={{ padding: "0.7rem 1rem" }}>
+                                    <span style={{ color: "var(--text-muted)", marginRight: "0.5rem", fontSize: "0.78rem" }}>#{i + 1}</span>
+                                    {c.pseudo ?? <span style={{ fontFamily: "monospace", fontSize: "0.78rem" }}>{c.creatorId.slice(0, 12)}</span>}
                                   </td>
-                                  <td style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>{c.mapCount}</td>
-                                  <td style={{ padding: "0.4rem 0.5rem", textAlign: "right", color: c.totalVotes > 0 ? "var(--green)" : undefined }}>{c.totalVotes > 0 ? "+" : ""}{c.totalVotes}</td>
-                                  <td style={{ padding: "0.4rem 0.5rem", textAlign: "right", fontWeight: 600 }}>{c.totalTests}</td>
+                                  <td style={{ padding: "0.7rem 1rem", textAlign: "right" }}>{c.mapCount}</td>
+                                  <td style={{ padding: "0.7rem 1rem", textAlign: "right", color: c.totalVotes > 0 ? "var(--green)" : undefined }}>{c.totalVotes > 0 ? "+" : ""}{c.totalVotes}</td>
+                                  <td style={{ padding: "0.7rem 1rem", textAlign: "right", fontWeight: 600 }}>{c.totalTests}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -1172,31 +1258,31 @@ export default function AdminPage() {
                     {storeItems.length === 0
                       ? <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>No items yet.</div>
                       : (
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.79rem" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
                           <thead>
                             <tr style={{ color: "var(--text-muted)", textAlign: "left" }}>
-                              <th style={{ padding: "0.4rem 0.5rem" }}>Code</th>
-                              <th style={{ padding: "0.4rem 0.5rem" }}>Name</th>
-                              <th style={{ padding: "0.4rem 0.5rem" }}>Currency</th>
-                              <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>Price</th>
-                              <th style={{ padding: "0.4rem 0.5rem" }}>Active</th>
+                              <th style={{ padding: "0.7rem 1rem" }}>Code</th>
+                              <th style={{ padding: "0.7rem 1rem" }}>Name</th>
+                              <th style={{ padding: "0.7rem 1rem" }}>Currency</th>
+                              <th style={{ padding: "0.7rem 1rem", textAlign: "right" }}>Price</th>
+                              <th style={{ padding: "0.7rem 1rem" }}>Active</th>
                             </tr>
                           </thead>
                           <tbody>
                             {storeItems.map((item) => (
                               <tr key={item.itemCode} style={{ borderTop: "1px solid var(--border)", opacity: item.active ? 1 : 0.5 }}>
-                                <td style={{ padding: "0.4rem 0.5rem", fontFamily: "monospace", fontSize: "0.72rem", color: "var(--text-muted)" }}>{item.itemCode}</td>
-                                <td style={{ padding: "0.4rem 0.5rem" }}>{item.name}</td>
-                                <td style={{ padding: "0.4rem 0.5rem" }}>
+                                <td style={{ padding: "0.7rem 1rem", fontFamily: "monospace", fontSize: "0.78rem", color: "var(--text-muted)" }}>{item.itemCode}</td>
+                                <td style={{ padding: "0.7rem 1rem" }}>{item.name}</td>
+                                <td style={{ padding: "0.7rem 1rem" }}>
                                   <span className={`tag ${item.currencyType === "hard" ? "tag-gold" : "tag-cyan"}`}>{item.currencyType}</span>
                                 </td>
-                                <td style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>
+                                <td style={{ padding: "0.7rem 1rem", textAlign: "right" }}>
                                   {editingItemCode === item.itemCode
                                     ? (
                                       <input
                                         type="number"
                                         className="form-input"
-                                        style={{ width: 72, padding: "0.1rem 0.3rem", fontSize: "0.79rem" }}
+                                        style={{ width: 72, padding: "0.1rem 0.3rem", fontSize: "0.85rem" }}
                                         value={editingPrice}
                                         min={0}
                                         onChange={(e) => setEditingPrice(Number(e.target.value))}
@@ -1216,7 +1302,7 @@ export default function AdminPage() {
                                     )
                                   }
                                 </td>
-                                <td style={{ padding: "0.4rem 0.5rem" }}>
+                                <td style={{ padding: "0.7rem 1rem" }}>
                                   <button
                                     className={`btn btn-sm ${item.active ? "" : "btn-primary"}`}
                                     disabled={economyBusy}
@@ -1238,7 +1324,7 @@ export default function AdminPage() {
 
           {/* ── Settings ──────────────────────────────────────────────────── */}
           {tab === "settings" && (
-            <div style={{ display: "grid", gap: "1.5rem", maxWidth: 800 }}>
+            <div style={{ display: "grid", gap: "2rem", maxWidth: 840 }}>
               {/* ── Studio settings form ────────────────────────────────── */}
               <div style={{ maxWidth: 560 }}>
                 {settingsNotice && <div className="success-banner" style={{ marginBottom: "1rem" }}>{settingsNotice}</div>}
@@ -1261,6 +1347,10 @@ export default function AdminPage() {
                   <div className="form-group">
                     <label className="form-label">Max MMR gap between opponents</label>
                     <input className="form-input" type="number" min={0} value={maxMmrGap} onChange={(e) => setMaxMmrGap(Number(e.target.value))} disabled={user?.role !== "admin"} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Match duration (seconds)</label>
+                    <input className="form-input" type="number" min={5} max={3600} value={matchDurationSeconds} onChange={(e) => setMatchDurationSeconds(Number(e.target.value))} disabled={user?.role !== "admin"} />
                   </div>
 
                   <div className="card-header" style={{ marginTop: "0.5rem" }}><span className="card-title">MMR deltas</span></div>
@@ -1353,12 +1443,12 @@ export default function AdminPage() {
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
                         <thead>
                           <tr style={{ color: "var(--text-muted)", textAlign: "left" }}>
-                            <th style={{ padding: "0.35rem 0.5rem" }}>Mode</th>
-                            <th style={{ padding: "0.35rem 0.5rem" }}>Rang</th>
-                            <th style={{ padding: "0.35rem 0.5rem", textAlign: "right" }}>Min MMR</th>
-                            <th style={{ padding: "0.35rem 0.5rem", textAlign: "right" }}>Max MMR</th>
-                            <th style={{ padding: "0.35rem 0.5rem", textAlign: "right" }}>Ordre</th>
-                            <th style={{ padding: "0.35rem 0.5rem" }}>Actions</th>
+                            <th style={{ padding: "0.6rem 0.875rem" }}>Mode</th>
+                            <th style={{ padding: "0.6rem 0.875rem" }}>Rang</th>
+                            <th style={{ padding: "0.6rem 0.875rem", textAlign: "right" }}>Min MMR</th>
+                            <th style={{ padding: "0.6rem 0.875rem", textAlign: "right" }}>Max MMR</th>
+                            <th style={{ padding: "0.6rem 0.875rem", textAlign: "right" }}>Ordre</th>
+                            <th style={{ padding: "0.6rem 0.875rem" }}>Actions</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1366,22 +1456,22 @@ export default function AdminPage() {
                             <tr key={r.id} style={{ borderTop: "1px solid var(--border)" }}>
                               {editingRankId === r.id ? (
                                 <>
-                                  <td style={{ padding: "0.35rem 0.5rem" }}>
+                                  <td style={{ padding: "0.6rem 0.875rem" }}>
                                     <span className={`tag ${r.mode === "ranked" ? "tag-cyan" : r.mode === "unranked" ? "tag-purple" : "tag-gold"}`}>{r.mode}</span>
                                   </td>
-                                  <td style={{ padding: "0.35rem 0.5rem" }}>
+                                  <td style={{ padding: "0.6rem 0.875rem" }}>
                                     <input className="form-input" style={{ padding: "0.2rem 0.4rem", fontSize: "0.8rem", width: 120 }} value={editRankForm.rank} onChange={(e) => setEditRankForm((f) => ({ ...f, rank: e.target.value }))} />
                                   </td>
-                                  <td style={{ padding: "0.35rem 0.5rem" }}>
+                                  <td style={{ padding: "0.6rem 0.875rem" }}>
                                     <input className="form-input" type="number" style={{ padding: "0.2rem 0.4rem", fontSize: "0.8rem", width: 80 }} value={editRankForm.minMmr} onChange={(e) => setEditRankForm((f) => ({ ...f, minMmr: Number(e.target.value) }))} />
                                   </td>
-                                  <td style={{ padding: "0.35rem 0.5rem" }}>
+                                  <td style={{ padding: "0.6rem 0.875rem" }}>
                                     <input className="form-input" type="number" placeholder="∞" style={{ padding: "0.2rem 0.4rem", fontSize: "0.8rem", width: 80 }} value={editRankForm.maxMmr} onChange={(e) => setEditRankForm((f) => ({ ...f, maxMmr: e.target.value }))} />
                                   </td>
-                                  <td style={{ padding: "0.35rem 0.5rem" }}>
+                                  <td style={{ padding: "0.6rem 0.875rem" }}>
                                     <input className="form-input" type="number" style={{ padding: "0.2rem 0.4rem", fontSize: "0.8rem", width: 60 }} value={editRankForm.sortOrder} onChange={(e) => setEditRankForm((f) => ({ ...f, sortOrder: Number(e.target.value) }))} />
                                   </td>
-                                  <td style={{ padding: "0.35rem 0.5rem" }}>
+                                  <td style={{ padding: "0.6rem 0.875rem" }}>
                                     <div style={{ display: "flex", gap: "0.25rem" }}>
                                       <button className="btn btn-sm btn-primary" disabled={ranksBusy} onClick={() => handleSaveRank(r.id)}>✓</button>
                                       <button className="btn btn-sm" disabled={ranksBusy} onClick={() => setEditingRankId(null)}>✕</button>
@@ -1390,16 +1480,16 @@ export default function AdminPage() {
                                 </>
                               ) : (
                                 <>
-                                  <td style={{ padding: "0.35rem 0.5rem" }}>
+                                  <td style={{ padding: "0.6rem 0.875rem" }}>
                                     <span className={`tag ${r.mode === "ranked" ? "tag-cyan" : r.mode === "unranked" ? "tag-purple" : "tag-gold"}`}>{r.mode}</span>
                                   </td>
-                                  <td style={{ padding: "0.35rem 0.5rem", fontWeight: 500 }}>{r.rank}</td>
-                                  <td style={{ padding: "0.35rem 0.5rem", textAlign: "right", fontFamily: "monospace" }}>{r.minMmr}</td>
-                                  <td style={{ padding: "0.35rem 0.5rem", textAlign: "right", fontFamily: "monospace", color: "var(--text-muted)" }}>
+                                  <td style={{ padding: "0.6rem 0.875rem", fontWeight: 500 }}>{r.rank}</td>
+                                  <td style={{ padding: "0.6rem 0.875rem", textAlign: "right", fontFamily: "monospace" }}>{r.minMmr}</td>
+                                  <td style={{ padding: "0.6rem 0.875rem", textAlign: "right", fontFamily: "monospace", color: "var(--text-muted)" }}>
                                     {r.maxMmr !== undefined ? r.maxMmr : <span style={{ opacity: 0.4 }}>∞</span>}
                                   </td>
-                                  <td style={{ padding: "0.35rem 0.5rem", textAlign: "right", color: "var(--text-muted)" }}>{r.sortOrder}</td>
-                                  <td style={{ padding: "0.35rem 0.5rem" }}>
+                                  <td style={{ padding: "0.6rem 0.875rem", textAlign: "right", color: "var(--text-muted)" }}>{r.sortOrder}</td>
+                                  <td style={{ padding: "0.6rem 0.875rem" }}>
                                     <div style={{ display: "flex", gap: "0.25rem" }}>
                                       <button className="btn btn-sm" disabled={ranksBusy} onClick={() => startEditRank(r)}>Éditer</button>
                                       <button className="btn btn-sm btn-danger" disabled={ranksBusy} onClick={() => handleDeleteRank(r.id)}>✕</button>
@@ -1454,7 +1544,7 @@ export default function AdminPage() {
 
           {/* ── Moderation ────────────────────────────────────────────────── */}
           {tab === "moderation" && (
-            <div className="grid-2" style={{ alignItems: "start" }}>
+            <div className="grid-2" style={{ alignItems: "start", gap: "2rem" }}>
               <div className="card">
                 <div className="card-header"><span className="card-title">New action</span></div>
                 {modNotice && <div className="success-banner">{modNotice}</div>}
@@ -1504,7 +1594,7 @@ export default function AdminPage() {
                 </form>
               </div>
 
-              <div style={{ display: "grid", gap: "1rem" }}>
+              <div style={{ display: "grid", gap: "1.5rem" }}>
                 <div className="card">
                   <div className="card-header">
                     <span className="card-title">Open signals</span>
@@ -1519,6 +1609,43 @@ export default function AdminPage() {
                         <span className="moderation-type" style={{ color: "var(--orange)" }}>{s.targetType}</span>
                         <span className="moderation-reason">{s.reason}</span>
                         <span className="moderation-status">{s.status}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="card">
+                  <div className="card-header">
+                    <span className="card-title">Map reports</span>
+                    <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                      {mapReports.length > 0 && <span className="tag tag-red">{mapReports.length}</span>}
+                      <button className="btn btn-sm" onClick={handleLoadMapReports} disabled={mapReportsLoading}>
+                        {mapReportsLoading ? "…" : "Refresh"}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="moderation-list">
+                    {mapReports.length === 0 && !mapReportsLoading && (
+                      <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>No open map reports.</div>
+                    )}
+                    {mapReports.map((r) => (
+                      <div key={r.id} className="moderation-item open" style={{ flexDirection: "column", gap: "0.375rem", alignItems: "flex-start" }}>
+                        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", width: "100%", flexWrap: "wrap" }}>
+                          <span className="tag tag-orange" style={{ fontSize: "0.65rem" }}>map</span>
+                          <span style={{ fontWeight: 600, fontSize: "0.875rem" }}>{r.mapTitle}</span>
+                          <span style={{ color: "var(--text-muted)", fontSize: "0.78rem", marginLeft: "auto" }}>
+                            by {r.reporterPseudo} · {new Date(r.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <span className="moderation-reason" style={{ fontSize: "0.875rem" }}>{r.reason}</span>
+                        <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.25rem" }}>
+                          <button className="btn btn-sm" onClick={() => handleDismissMapReport(r.id, "reviewed")}>
+                            Mark reviewed
+                          </button>
+                          <button className="btn btn-sm" style={{ color: "var(--text-muted)" }} onClick={() => handleDismissMapReport(r.id, "dismissed")}>
+                            Dismiss
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1548,7 +1675,8 @@ export default function AdminPage() {
 
           {/* ── Players ───────────────────────────────────────────────────── */}
           {tab === "players" && (
-            <div className="grid-2" style={{ alignItems: "start", gap: "1.5rem" }}>
+            <>
+            <div className="grid-2" style={{ alignItems: "start", gap: "2rem" }}>
               <div className="card" style={{ overflowX: "auto" }}>
                 <div className="card-header">
                   <span className="card-title">Players</span>
@@ -1561,7 +1689,7 @@ export default function AdminPage() {
                   {players.map((p) => (
                     <div
                       key={p.id}
-                      style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.5rem 0.75rem", borderRadius: "0.375rem", background: editingPlayer?.id === p.id ? "rgba(0,200,255,0.08)" : "transparent", border: editingPlayer?.id === p.id ? "1px solid var(--cyan)" : "1px solid transparent", cursor: "pointer", fontSize: "0.82rem" }}
+                      style={{ display: "flex", alignItems: "center", gap: "0.875rem", padding: "0.75rem 1rem", borderRadius: "0.5rem", background: editingPlayer?.id === p.id ? "rgba(0,212,255,0.08)" : "transparent", border: editingPlayer?.id === p.id ? "1px solid var(--cyan)" : "1px solid rgba(255,255,255,0.04)", cursor: "pointer", fontSize: "0.875rem", transition: "background 0.15s, border-color 0.15s" }}
                       onClick={() => openEdit(p)}
                     >
                       <span style={{ fontFamily: "monospace", color: "var(--text-muted)", fontSize: "0.7rem", flexShrink: 0 }}>{p.id.slice(0, 8)}…</span>
@@ -1601,7 +1729,12 @@ export default function AdminPage() {
                       </div>
                       <div className="form-group">
                         <label className="form-label">Region</label>
-                        <input className="form-input" value={editForm.region ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, region: e.target.value }))} placeholder="EU, NA…" />
+                        <select className="form-input" value={editForm.region ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, region: e.target.value }))}>
+                          <option value="">— None —</option>
+                          {REGIONS.map((r) => (
+                            <option key={r} value={r}>{r}</option>
+                          ))}
+                        </select>
                       </div>
                       <div className="form-group">
                         <label className="form-label">Bio</label>
@@ -1619,11 +1752,83 @@ export default function AdminPage() {
                 )}
               </div>
             </div>
+
+            {editingPlayer && (
+              <div className="card" style={{ marginTop: "1rem", gridColumn: "1 / -1" }}>
+                <div className="card-header">
+                  <span className="card-title">Timeline — {editingPlayer.pseudo ?? editingPlayer.email}</span>
+                  {playerTimeline && <span className="tag tag-purple">{playerTimeline.events.length} events</span>}
+                </div>
+                {timelineLoading && <div style={{ color: "var(--cyan)", fontSize: "0.85rem" }}>Loading…</div>}
+                {!timelineLoading && playerTimeline?.events.length === 0 && (
+                  <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>No events yet.</div>
+                )}
+                {!timelineLoading && playerTimeline && playerTimeline.events.length > 0 && (
+                  <div style={{ display: "grid", gap: "0.625rem", maxHeight: "460px", overflowY: "auto" }}>
+                    {playerTimeline.events.map((ev) => (
+                      <div
+                        key={ev.id}
+                        style={{
+                          display: "flex",
+                          gap: "0.75rem",
+                          alignItems: "flex-start",
+                          padding: "0.75rem 1rem",
+                          borderRadius: "0.375rem",
+                          background: ev.kind === "moderation" ? "rgba(239,68,68,0.06)" : "rgba(0,200,255,0.04)",
+                          border: `1px solid ${ev.kind === "moderation" ? "rgba(239,68,68,0.2)" : "rgba(0,200,255,0.1)"}`,
+                          fontSize: "0.875rem"
+                        }}
+                      >
+                        <span style={{ fontSize: "1rem", flexShrink: 0 }}>
+                          {ev.kind === "match"
+                            ? ev.result === "win" ? "✅" : ev.result === "loss" ? "❌" : "➖"
+                            : ev.action?.includes("warn") ? "⚠️"
+                            : ev.action?.includes("ban") ? "🔨"
+                            : ev.action?.includes("suspend") ? "⏸️"
+                            : ev.action?.includes("unban") || ev.action?.includes("unsuspend") ? "✔️"
+                            : "📋"}
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          {ev.kind === "moderation" && (
+                            <>
+                              <span className={`tag ${ev.action?.includes("ban") ? "tag-red" : ev.action?.includes("warn") ? "tag-orange" : ev.action?.includes("unban") || ev.action?.includes("unsuspend") ? "tag-green" : "tag-purple"}`} style={{ fontSize: "0.65rem", marginRight: "0.4rem" }}>
+                                {ev.action?.replace("account.", "")}
+                              </span>
+                              <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>{ev.reason}</span>
+                            </>
+                          )}
+                          {ev.kind === "match" && (
+                            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+                              <span className="tag tag-cyan" style={{ fontSize: "0.65rem" }}>{ev.mode}</span>
+                              <span style={{ fontWeight: 600, color: ev.result === "win" ? "var(--green, #22c55e)" : ev.result === "loss" ? "var(--red, #ef4444)" : "var(--text-muted)" }}>
+                                {ev.result?.toUpperCase() ?? "—"}
+                              </span>
+                              {ev.mmrDelta !== undefined && (
+                                <span style={{ color: ev.mmrDelta >= 0 ? "var(--green, #22c55e)" : "var(--red, #ef4444)", fontWeight: 600, fontSize: "0.78rem" }}>
+                                  MMR {ev.mmrDelta >= 0 ? "+" : ""}{ev.mmrDelta}
+                                  {ev.mmrAfter !== undefined && <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> → {ev.mmrAfter}</span>}
+                                </span>
+                              )}
+                              <span style={{ color: "var(--text-muted)", fontSize: "0.7rem", fontFamily: "monospace" }}>{ev.matchId?.slice(0, 8)}…</span>
+                            </div>
+                          )}
+                        </div>
+                        <span style={{ color: "var(--text-muted)", fontSize: "0.7rem", flexShrink: 0, textAlign: "right" }}>
+                          {new Date(ev.date).toLocaleDateString()}<br />
+                          <span style={{ fontSize: "0.65rem" }}>{new Date(ev.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            </>
           )}
 
           {/* ── Journal ───────────────────────────────────────────────────── */}
           {tab === "journal" && (
-            <div style={{ display: "grid", gap: "1rem" }}>
+            <div style={{ display: "grid", gap: "1.5rem" }}>
               <div className="tab-bar">
                 {(["transactions", "sanctions", "logs"] as const).map((st) => (
                   <button
@@ -1652,41 +1857,41 @@ export default function AdminPage() {
                   {txJournal.length === 0
                     ? <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Aucune transaction.</div>
                     : (
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.79rem" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
                         <thead>
                           <tr style={{ color: "var(--text-muted)", textAlign: "left" }}>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Date</th>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Joueur</th>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Objet</th>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Monnaie</th>
-                            <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>Qté</th>
-                            <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>Prix u.</th>
-                            <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>Total</th>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Statut</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Date</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Joueur</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Objet</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Monnaie</th>
+                            <th style={{ padding: "0.7rem 1rem", textAlign: "right" }}>Qté</th>
+                            <th style={{ padding: "0.7rem 1rem", textAlign: "right" }}>Prix u.</th>
+                            <th style={{ padding: "0.7rem 1rem", textAlign: "right" }}>Total</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Statut</th>
                           </tr>
                         </thead>
                         <tbody>
                           {txJournal.map((tx) => (
                             <tr key={tx.id} style={{ borderTop: "1px solid var(--border)" }}>
-                              <td style={{ padding: "0.4rem 0.5rem", color: "var(--text-muted)", fontSize: "0.74rem", whiteSpace: "nowrap" }}>
+                              <td style={{ padding: "0.7rem 1rem", color: "var(--text-muted)", fontSize: "0.74rem", whiteSpace: "nowrap" }}>
                                 {new Date(tx.createdAt).toLocaleString()}
                               </td>
-                              <td style={{ padding: "0.4rem 0.5rem" }}>
-                                {tx.playerPseudo ?? <span style={{ fontFamily: "monospace", fontSize: "0.72rem", color: "var(--text-muted)" }}>{tx.playerId.slice(0, 8)}…</span>}
+                              <td style={{ padding: "0.7rem 1rem" }}>
+                                {tx.playerPseudo ?? <span style={{ fontFamily: "monospace", fontSize: "0.78rem", color: "var(--text-muted)" }}>{tx.playerId.slice(0, 8)}…</span>}
                               </td>
-                              <td style={{ padding: "0.4rem 0.5rem" }}>
+                              <td style={{ padding: "0.7rem 1rem" }}>
                                 <span style={{ fontWeight: 500 }}>{tx.itemName ?? tx.itemCode ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</span>
-                                {tx.itemCode && tx.itemName && <span style={{ color: "var(--text-muted)", fontSize: "0.72rem", marginLeft: "0.25rem" }}>({tx.itemCode})</span>}
+                                {tx.itemCode && tx.itemName && <span style={{ color: "var(--text-muted)", fontSize: "0.78rem", marginLeft: "0.25rem" }}>({tx.itemCode})</span>}
                               </td>
-                              <td style={{ padding: "0.4rem 0.5rem" }}>
+                              <td style={{ padding: "0.7rem 1rem" }}>
                                 <span className={`tag ${tx.currencyType === "soft" ? "tag-cyan" : "tag-gold"}`}>{tx.currencyType}</span>
                               </td>
-                              <td style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>{tx.quantity}</td>
-                              <td style={{ padding: "0.4rem 0.5rem", textAlign: "right", fontFamily: "monospace" }}>{tx.unitPrice}</td>
-                              <td style={{ padding: "0.4rem 0.5rem", textAlign: "right", fontFamily: "monospace", fontWeight: 600, color: tx.status === "rejected" ? "var(--red)" : "var(--green)" }}>
+                              <td style={{ padding: "0.7rem 1rem", textAlign: "right" }}>{tx.quantity}</td>
+                              <td style={{ padding: "0.7rem 1rem", textAlign: "right", fontFamily: "monospace" }}>{tx.unitPrice}</td>
+                              <td style={{ padding: "0.7rem 1rem", textAlign: "right", fontFamily: "monospace", fontWeight: 600, color: tx.status === "rejected" ? "var(--red)" : "var(--green)" }}>
                                 {tx.status === "rejected" ? "—" : tx.amount}
                               </td>
-                              <td style={{ padding: "0.4rem 0.5rem" }}>
+                              <td style={{ padding: "0.7rem 1rem" }}>
                                 <span className={`tag ${tx.status === "accepted" ? "tag-green" : "tag-red"}`}>
                                   {tx.status === "accepted" ? "OK" : tx.reason ?? "refusé"}
                                 </span>
@@ -1713,40 +1918,40 @@ export default function AdminPage() {
                   {sanctionJournal.length === 0
                     ? <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Aucune sanction.</div>
                     : (
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.79rem" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
                         <thead>
                           <tr style={{ color: "var(--text-muted)", textAlign: "left" }}>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Date</th>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Joueur</th>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Type</th>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Raison</th>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Par</th>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Expire</th>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Statut</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Date</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Joueur</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Type</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Raison</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Par</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Expire</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Statut</th>
                           </tr>
                         </thead>
                         <tbody>
                           {sanctionJournal.map((s) => (
                             <tr key={s.id} style={{ borderTop: "1px solid var(--border)" }}>
-                              <td style={{ padding: "0.4rem 0.5rem", color: "var(--text-muted)", fontSize: "0.74rem", whiteSpace: "nowrap" }}>
+                              <td style={{ padding: "0.7rem 1rem", color: "var(--text-muted)", fontSize: "0.74rem", whiteSpace: "nowrap" }}>
                                 {new Date(s.startedAt).toLocaleString()}
                               </td>
-                              <td style={{ padding: "0.4rem 0.5rem", fontWeight: 500 }}>
-                                {s.userPseudo ?? <span style={{ fontFamily: "monospace", fontSize: "0.72rem" }}>{s.userId.slice(0, 8)}…</span>}
+                              <td style={{ padding: "0.7rem 1rem", fontWeight: 500 }}>
+                                {s.userPseudo ?? <span style={{ fontFamily: "monospace", fontSize: "0.78rem" }}>{s.userId.slice(0, 8)}…</span>}
                               </td>
-                              <td style={{ padding: "0.4rem 0.5rem" }}>
+                              <td style={{ padding: "0.7rem 1rem" }}>
                                 <span className={`tag ${s.type === "ban" ? "tag-red" : s.type === "suspension" ? "tag-orange" : "tag-gold"}`}>{s.type}</span>
                               </td>
-                              <td style={{ padding: "0.4rem 0.5rem", color: "var(--text-muted)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              <td style={{ padding: "0.7rem 1rem", color: "var(--text-muted)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                 {s.reason}
                               </td>
-                              <td style={{ padding: "0.4rem 0.5rem", color: "var(--text-muted)", fontSize: "0.74rem" }}>
+                              <td style={{ padding: "0.7rem 1rem", color: "var(--text-muted)", fontSize: "0.74rem" }}>
                                 {s.actorPseudo ?? (s.actorId ? s.actorId.slice(0, 8) + "…" : "—")}
                               </td>
-                              <td style={{ padding: "0.4rem 0.5rem", color: "var(--text-muted)", fontSize: "0.74rem" }}>
+                              <td style={{ padding: "0.7rem 1rem", color: "var(--text-muted)", fontSize: "0.74rem" }}>
                                 {s.endsAt ? new Date(s.endsAt).toLocaleString() : <span style={{ opacity: 0.4 }}>∞</span>}
                               </td>
-                              <td style={{ padding: "0.4rem 0.5rem" }}>
+                              <td style={{ padding: "0.7rem 1rem" }}>
                                 <span className={`tag ${s.status === "active" ? "tag-red" : "tag-cyan"}`}>{s.status}</span>
                               </td>
                             </tr>
@@ -1774,11 +1979,11 @@ export default function AdminPage() {
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.78rem" }}>
                         <thead>
                           <tr style={{ color: "var(--text-muted)", textAlign: "left" }}>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Date</th>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Action</th>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Cible</th>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Acteur</th>
-                            <th style={{ padding: "0.4rem 0.5rem" }}>Détails</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Date</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Action</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Cible</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Acteur</th>
+                            <th style={{ padding: "0.7rem 1rem" }}>Détails</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1792,20 +1997,20 @@ export default function AdminPage() {
                               : "tag-purple";
                             return (
                               <tr key={log.id} style={{ borderTop: "1px solid var(--border)" }}>
-                                <td style={{ padding: "0.4rem 0.5rem", color: "var(--text-muted)", fontSize: "0.73rem", whiteSpace: "nowrap" }}>
+                                <td style={{ padding: "0.7rem 1rem", color: "var(--text-muted)", fontSize: "0.73rem", whiteSpace: "nowrap" }}>
                                   {new Date(log.createdAt).toLocaleString()}
                                 </td>
-                                <td style={{ padding: "0.4rem 0.5rem" }}>
+                                <td style={{ padding: "0.7rem 1rem" }}>
                                   <span className={`tag ${actionColor}`} style={{ fontSize: "0.7rem" }}>{log.action}</span>
                                 </td>
-                                <td style={{ padding: "0.4rem 0.5rem", color: "var(--text-muted)", fontSize: "0.73rem" }}>
+                                <td style={{ padding: "0.7rem 1rem", color: "var(--text-muted)", fontSize: "0.73rem" }}>
                                   <span>{log.targetType}</span>
                                   {log.targetId && <span style={{ fontFamily: "monospace", marginLeft: "0.25rem", opacity: 0.6 }}>{log.targetId.slice(0, 8)}…</span>}
                                 </td>
-                                <td style={{ padding: "0.4rem 0.5rem", fontSize: "0.74rem" }}>
+                                <td style={{ padding: "0.7rem 1rem", fontSize: "0.74rem" }}>
                                   {log.actorPseudo ?? <span style={{ fontFamily: "monospace", opacity: 0.7 }}>{log.actorId.slice(0, 8)}…</span>}
                                 </td>
-                                <td style={{ padding: "0.4rem 0.5rem", color: "var(--text-muted)", fontSize: "0.72rem", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                <td style={{ padding: "0.7rem 1rem", color: "var(--text-muted)", fontSize: "0.78rem", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                   {log.metadata ? JSON.stringify(log.metadata) : "—"}
                                 </td>
                               </tr>
@@ -1819,8 +2024,8 @@ export default function AdminPage() {
               )}
             </div>
           )}
-        </section>
+        </div>
       </main>
-    </>
+    </div>
   );
 }

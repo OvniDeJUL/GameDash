@@ -7,6 +7,7 @@ import type {
   AdminDashboardSummary,
   AdminMatchDetail,
   AdminPlayerResponse,
+  AdminPlayerTimeline,
   AdminQueueSnapshot,
   AdminRankConfigItem,
   AdminSanctionEntry,
@@ -16,6 +17,7 @@ import type {
   AdminUpdateStoreItemRequest,
   AuditLogEntry,
   MapModerationRequest,
+  MapReportItem,
   ModerationActionResponse,
   ModerationSignalResponse,
   StaffEconomyAnalyticsResponse,
@@ -77,6 +79,12 @@ export class AdminController {
     return this.adminService.updatePlayer(userId, body);
   }
 
+  @Get("players/:userId/timeline")
+  @Roles("staff", "admin")
+  getPlayerTimeline(@Param("userId") userId: string): Promise<AdminPlayerTimeline> {
+    return this.adminService.getPlayerTimeline(userId);
+  }
+
   @Get("moderation/signals")
   @Roles("staff", "admin")
   getModerationSignals(): Promise<ModerationSignalResponse[]> {
@@ -107,6 +115,22 @@ export class AdminController {
     @Body() body: MapModerationRequest
   ): Promise<ModerationActionResponse> {
     return this.adminService.moderateMap(user, mapId, body);
+  }
+
+  @Get("moderation/map-reports")
+  @Roles("staff", "admin")
+  getMapReports(): Promise<MapReportItem[]> {
+    return this.adminService.getMapReports();
+  }
+
+  @Patch("moderation/map-reports/:id")
+  @Roles("staff", "admin")
+  @HttpCode(204)
+  dismissMapReport(
+    @Param("id") id: string,
+    @Body() body: { action: "reviewed" | "dismissed" }
+  ): Promise<void> {
+    return this.adminService.dismissMapReport(id, body.action ?? "dismissed");
   }
 
   // ─── Matchmaking live view ────────────────────────────────────────────────

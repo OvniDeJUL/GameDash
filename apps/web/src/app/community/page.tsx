@@ -98,6 +98,51 @@ function CreateMapModal({ onClose, onCreated }: CreateMapModalProps) {
   );
 }
 
+// ─── Test deployability modal ──────────────────────────────────────────────
+
+interface TestDeployabilityModalProps {
+  mapTitle: string;
+  onAnswer: (deployable: boolean) => void;
+  onClose: () => void;
+  busy: boolean;
+}
+
+function TestDeployabilityModal({ mapTitle, onAnswer, onClose, busy }: TestDeployabilityModalProps) {
+  return (
+    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 480 }}>
+        <div className="modal-title">Test review — {mapTitle}</div>
+        <p style={{ fontSize: "0.85rem", lineHeight: 1.7, margin: "0.75rem 0 1.25rem" }}>
+          Is this map <strong>deployable</strong>? It should respect:
+        </p>
+        <ul style={{ fontSize: "0.82rem", lineHeight: 1.8, paddingLeft: "1.25rem", margin: "0 0 1.5rem", color: "var(--text-secondary)" }}>
+          <li>Game rules and fair play</li>
+          <li>Anti-hate and anti-harassment policy</li>
+          <li>No exploits or game-breaking mechanics</li>
+          <li>Appropriate content for all players</li>
+        </ul>
+        <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "1.25rem" }}>
+          Voting <strong>No</strong> will automatically report this map to staff for review.
+        </p>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+          <button
+            className="btn"
+            style={{ background: "rgba(239,68,68,0.15)", color: "var(--red, #ef4444)", border: "1px solid rgba(239,68,68,0.3)" }}
+            onClick={() => onAnswer(false)}
+            disabled={busy}
+          >
+            {busy ? "…" : "No — report"}
+          </button>
+          <button className="btn btn-primary" onClick={() => onAnswer(true)} disabled={busy}>
+            {busy ? "…" : "Yes — deployable"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Add version modal ─────────────────────────────────────────────────────
 
 interface AddVersionModalProps {
@@ -164,6 +209,12 @@ interface MapCardProps {
 function MapCard({ map, userId, onUpdate, onOpenDetail }: MapCardProps) {
   const [busy, setBusy] = useState(false);
   const [isFav, setIsFav] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportDone, setReportDone] = useState(false);
+  const [showTestModal, setShowTestModal] = useState(false);
+  const [testBusy, setTestBusy] = useState(false);
 
   async function handleVote(value: 1 | -1) {
     setBusy(true);
@@ -174,12 +225,14 @@ function MapCard({ map, userId, onUpdate, onOpenDetail }: MapCardProps) {
       setBusy(false); }
   }
 
-  async function handleTest() {
-    setBusy(true);
+  async function handleTestAnswer(deployable: boolean) {
+    setTestBusy(true);
     try {
-      const res = await withToken((t) => maps.test(map.id, { completed: true }, t));
+      const res = await withToken((t) => maps.test(map.id, { completed: deployable }, t));
       onUpdate(res.map);
-    } catch { /* ignore */ } finally { setBusy(false); }
+      setShowTestModal(false);
+      if (!deployable) setReportDone(true);
+    } catch { /* ignore */ } finally { setTestBusy(false); }
   }
 
   async function handleFavorite() {
@@ -192,10 +245,30 @@ function MapCard({ map, userId, onUpdate, onOpenDetail }: MapCardProps) {
     } catch { /* ignore */ } finally { setBusy(false); }
   }
 
+  async function handleReport(e: React.FormEvent) {
+    e.preventDefault();
+    if (!reportReason.trim()) return;
+    setReportBusy(true);
+    try {
+      await withToken((t) => maps.report(map.id, { reason: reportReason.trim() }, t));
+      setReportDone(true);
+      setShowReport(false);
+      setReportReason("");
+    } catch { /* ignore */ } finally { setReportBusy(false); }
+  }
+
   const isOwn = map.creatorId === userId;
 
   return (
     <div className="map-card">
+      {showTestModal && (
+        <TestDeployabilityModal
+          mapTitle={map.title}
+          onAnswer={handleTestAnswer}
+          onClose={() => setShowTestModal(false)}
+          busy={testBusy}
+        />
+      )}
       <div style={{ display: "flex", alignItems: "flex-start", gap: "0.875rem" }}>
         <div className="map-thumb">{getMapIcon(map.tags)}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -235,7 +308,18 @@ function MapCard({ map, userId, onUpdate, onOpenDetail }: MapCardProps) {
           <button className="vote-btn up" disabled={busy} onClick={() => handleVote(1)}>👍 {map.stats.upvotes}</button>
           <button className="vote-btn down" disabled={busy} onClick={() => handleVote(-1)}>👎</button>
           <button className={`vote-btn fav${isFav ? " active" : ""}`} disabled={busy} onClick={handleFavorite}>{isFav ? "★" : "⭐"} {map.stats.favorites}</button>
-          <button className="vote-btn" disabled={busy} onClick={handleTest}>🎮 Test</button>
+          <button className="vote-btn" disabled={busy} onClick={() => setShowTestModal(true)}>🎮 Test</button>
+          {!isOwn && !reportDone && (
+            <button
+              className="vote-btn"
+              disabled={busy}
+              onClick={() => setShowReport((v) => !v)}
+              style={{ color: "var(--red, #ef4444)", fontSize: "0.75rem" }}
+            >
+              🚩 Report
+            </button>
+          )}
+          {reportDone && <span style={{ fontSize: "0.75rem", color: "var(--text-muted, #888)" }}>Reported</span>}
         </div>
         <button
           className="btn btn-sm"
@@ -245,6 +329,26 @@ function MapCard({ map, userId, onUpdate, onOpenDetail }: MapCardProps) {
           Details
         </button>
       </div>
+
+      {showReport && (
+        <form onSubmit={handleReport} style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem", flexDirection: "column" }}>
+          <textarea
+            className="form-input"
+            rows={2}
+            placeholder="Describe the issue…"
+            value={reportReason}
+            onChange={(e) => setReportReason(e.target.value)}
+            required
+            style={{ resize: "none", fontSize: "0.82rem" }}
+          />
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button type="submit" className="btn btn-sm" style={{ background: "var(--red, #ef4444)" }} disabled={reportBusy}>
+              {reportBusy ? "…" : "Submit report"}
+            </button>
+            <button type="button" className="btn btn-sm" onClick={() => setShowReport(false)}>Cancel</button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }
@@ -306,11 +410,16 @@ function MapDetailPanel({ mapId, userId, onClose, onMapUpdated }: MapDetailPanel
           <button className="btn btn-sm" onClick={onClose}>✕</button>
         </div>
 
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
           <span className={`tag ${STATUS_COLORS[detail.status] ?? "tag-purple"}`}>{detail.status}</span>
           {isOwn && <span className="tag tag-cyan">my map</span>}
           {detail.tags.map((tag) => <span key={tag} className="map-tag">{tag}</span>)}
         </div>
+        {detail.creatorPseudo && (
+          <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
+            by <strong style={{ color: "var(--cyan)" }}>{detail.creatorPseudo}</strong>
+          </div>
+        )}
 
         <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>
           {detail.description}

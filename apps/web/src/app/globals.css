@@ -1373,6 +1373,29 @@ select.form-input {
 .tab-btn:hover { color: var(--text-secondary); }
 .tab-btn.active { color: var(--cyan); border-bottom-color: var(--cyan); }
 
+/* ─── Admin table polish ──────────────────────────── */
+
+.card table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.card tbody tr {
+  transition: background 0.12s;
+}
+
+.card tbody tr:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.card thead th {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 /* ─── Responsive ──────────────────────────────────── */
 
 @media (max-width: 900px) {

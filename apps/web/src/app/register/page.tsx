@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { auth as authApi, ApiError } from "../../lib/api";
 import { saveTokens, isLoggedIn } from "../../lib/auth";
+import { REGIONS } from "@gamedash/contracts";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -21,7 +22,7 @@ export default function RegisterPage() {
     if (isLoggedIn()) router.replace("/dashboard");
   }, [router]);
 
-  function set(field: keyof typeof form) {
+  function set(field: Exclude<keyof typeof form, "region">) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setForm((prev) => ({ ...prev, [field]: e.target.value }));
   }
@@ -114,14 +115,18 @@ export default function RegisterPage() {
 
               <div className="form-group">
                 <label className="form-label" htmlFor="region">Region (optional)</label>
-                <input
+                <select
                   id="region"
                   className="form-input"
                   value={form.region}
-                  onChange={set("region")}
+                  onChange={(e) => setForm((prev) => ({ ...prev, region: e.target.value }))}
                   disabled={loading}
-                  placeholder="EU, NA, APAC…"
-                />
+                >
+                  <option value="">— select a region —</option>
+                  {REGIONS.map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="form-group">
