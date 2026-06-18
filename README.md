@@ -139,27 +139,14 @@ corepack pnpm --filter @gamedash/api exec prisma studio
 
 ### 4. Lancer en développement
 
-**Les deux apps en parallèle (recommandé) :**
-
 ```bash
 corepack pnpm dev
-```
-
-**Ou séparément :**
-
-```bash
-# Terminal 1 — API
-corepack pnpm --filter @gamedash/api dev
-
-# Terminal 2 — Frontend
-corepack pnpm --filter @gamedash/web dev
 ```
 
 | Service | URL |
 |---|---|
 | Frontend | http://localhost:3000 |
 | API | http://localhost:3001/api/v1 |
-| Swagger UI | http://localhost:3001/api/docs |
 | Health check | http://localhost:3001/api/v1/health |
 
 ---
