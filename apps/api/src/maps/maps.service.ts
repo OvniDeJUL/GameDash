@@ -30,13 +30,18 @@ export class MapsService {
     tag?: string;
     status?: MapStatus;
     creatorId?: string;
-  } = {}): Promise<MapSummary[]> {
+  } = {}, actor?: { id: string; role: string }): Promise<MapSummary[]> {
+    const isPrivileged = actor?.role === "admin" || actor?.role === "staff";
+    const isOwnMaps = query.creatorId && actor && query.creatorId === actor.id;
+    const bypassReview = isPrivileged || isOwnMaps;
+
     const maps = await this.prisma.gameMap.findMany({
       where: {
         status: query.status
           ? (query.status.toUpperCase() as "DRAFT" | "BETA" | "STABLE" | "HIDDEN")
           : { not: "HIDDEN" },
         creatorId: query.creatorId ?? undefined,
+        ...(!bypassReview ? { reviewStatus: { in: ["approved", "featured"] } } : {}),
         ...(query.tag ? { tags: { has: query.tag.toLowerCase() } } : {}),
         ...(query.q
           ? {
@@ -142,7 +147,7 @@ export class MapsService {
     await this.requireMap(mapId);
 
     await this.prisma.mapTest.upsert({
-      where: { mapId_userId: { mapId, userId: actor.id } } as never,
+      where: { mapId_userId: { mapId, userId: actor.id } },
       create: { mapId, userId: actor.id, completed: body.completed },
       update: { completed: body.completed }
     });
@@ -280,7 +285,7 @@ export class MapsService {
     const ageDays = Math.max(0, Math.floor((Date.now() - map.updatedAt.getTime()) / (1000 * 60 * 60 * 24)));
     const recencyBoost = Math.max(0, 10 - ageDays);
     const voteScore = upvotes - downvotes;
-    const popularityScore = Math.max(0, Number((voteScore * 10 + completedTests * 10 - failedTests * 10 + favorites * 3 + versionCount * 2 + recencyBoost).toFixed(2)));
+    const popularityScore = Math.max(0, Number((voteScore * 10 + completedTests * 100 - failedTests * 10 + favorites * 3 + versionCount * 2 + recencyBoost).toFixed(2)));
 
     return { mapId: map.id, versionCount, voteScore, upvotes, downvotes, completedTests, favorites, popularityScore };
   }
@@ -293,6 +298,7 @@ export class MapsService {
     tags: string[];
     screenshots: string[];
     status: string;
+    reviewStatus: string;
     popularityScore: number;
     createdAt: Date;
     updatedAt: Date;
@@ -311,6 +317,7 @@ export class MapsService {
       tags: map.tags,
       screenshots: map.screenshots,
       status: map.status.toLowerCase() as MapStatus,
+      reviewStatus: map.reviewStatus,
       popularityScore: map.popularityScore,
       latestVersionLabel: map.versions[0]?.versionLabel,
       createdAt: map.createdAt.toISOString(),

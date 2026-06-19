@@ -138,7 +138,7 @@ export class AuthService {
       throw new UnauthorizedException("Access token is invalid or expired.");
     }
 
-    return { id: payload.sub, email: payload.email, role: payload.role };
+    return { id: payload.sub, email: payload.email, role: payload.role.toLowerCase() as Role };
   }
 
   async getCurrentUser(actor: AuthenticatedUser): Promise<AuthUserResponse> {

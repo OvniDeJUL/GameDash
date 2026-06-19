@@ -351,6 +351,8 @@ model MapTest {
   createdAt DateTime @default(now())
   map       GameMap  @relation(fields: [mapId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([mapId, userId])
 }
 
 model MapFavorite {

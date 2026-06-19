@@ -255,8 +255,23 @@ export default function DashboardPage() {
         {user && (
           <section aria-label="Player overview">
             <div className="hero-card">
-              <div className="hero-avatar">
-                {(profile?.pseudo ?? user.email).charAt(0).toUpperCase()}
+              <div className="hero-avatar" style={{ padding: 0, overflow: "hidden" }}>
+                {profile?.avatarUrl ? (
+                  <img
+                    src={profile.avatarUrl}
+                    alt={profile.pseudo ?? user.email}
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    onError={(e) => {
+                      const el = e.currentTarget;
+                      el.style.display = "none";
+                      const fallback = document.createElement("span");
+                      fallback.textContent = (profile?.pseudo ?? user.email).charAt(0).toUpperCase();
+                      el.parentElement?.appendChild(fallback);
+                    }}
+                  />
+                ) : (
+                  (profile?.pseudo ?? user.email).charAt(0).toUpperCase()
+                )}
               </div>
               <div className="hero-info">
                 <h1>{profile?.pseudo ?? user.email}</h1>

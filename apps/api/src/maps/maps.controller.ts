@@ -29,12 +29,13 @@ export class MapsController {
 
   @Get()
   listMaps(
+    @CurrentUser() actor: AuthenticatedUser,
     @Query("q") q?: string,
     @Query("tag") tag?: string,
     @Query("status") status?: MapStatus,
     @Query("creatorId") creatorId?: string
   ): Promise<MapSummary[]> {
-    return this.mapsService.listMaps({ q, tag, status, creatorId });
+    return this.mapsService.listMaps({ q, tag, status, creatorId }, actor);
   }
 
   @Post()

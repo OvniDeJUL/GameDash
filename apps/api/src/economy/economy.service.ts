@@ -31,39 +31,6 @@ const HARD_CURRENCY_PACKAGES: HardCurrencyPackage[] = [
   { id: "pkg_50",  label: "Premium Pack",    hardAmount: 50,  bonusAmount: 10, priceUsd: 49.99 }
 ];
 
-/** Store catalog stays hardcoded — would move to DB for live-ops price changes. */
-const STORE_ITEMS: StoreItem[] = [
-  {
-    id: "item_starter_skin",
-    itemCode: "skin_starter",
-    name: "Starter Skin",
-    description: "Baseline character skin purchasable with soft currency.",
-    currencyType: "soft",
-    price: 200,
-    active: true,
-    sortOrder: 10
-  },
-  {
-    id: "item_ranked_banner",
-    itemCode: "banner_ranked",
-    name: "Ranked Banner",
-    description: "Profile banner for competitive players.",
-    currencyType: "soft",
-    price: 400,
-    active: true,
-    sortOrder: 20
-  },
-  {
-    id: "item_premium_skin",
-    itemCode: "skin_premium",
-    name: "Premium Skin",
-    description: "Sandbox premium cosmetic purchasable with hard currency.",
-    currencyType: "hard",
-    price: 5,
-    active: true,
-    sortOrder: 30
-  }
-];
 
 @Injectable()
 export class EconomyService {
@@ -91,8 +58,25 @@ export class EconomyService {
     if (v.funSoftWinBonus !== undefined) this.softPerMatch.fun.winBonus = v.funSoftWinBonus;
   }
 
-  listStoreItems(): StoreItem[] {
-    return STORE_ITEMS.filter((i) => i.active).sort((a, b) => a.sortOrder - b.sortOrder);
+  async listStoreItems(): Promise<StoreItem[]> {
+    const items = await this.prisma.storeItem.findMany({
+      where: { active: true },
+      orderBy: { sortOrder: "asc" }
+    });
+    return items.map((i) => this.toStoreItem(i));
+  }
+
+  private toStoreItem(i: { id: string; itemCode: string; name: string; description: string | null; currencyType: string; price: number; active: boolean; sortOrder: number }): StoreItem {
+    return {
+      id: i.id,
+      itemCode: i.itemCode,
+      name: i.name,
+      description: i.description ?? undefined,
+      currencyType: i.currencyType.toLowerCase() as CurrencyType,
+      price: i.price,
+      active: i.active,
+      sortOrder: i.sortOrder
+    };
   }
 
   async getWallet(actor: AuthenticatedUser): Promise<WalletResponse> {
@@ -126,8 +110,9 @@ export class EconomyService {
 
   async purchase(actor: AuthenticatedUser, body: PurchaseRequest): Promise<PurchaseResponse> {
     const quantity = this.assertQuantity(body.quantity);
-    const item = STORE_ITEMS.find((s) => s.id === body.storeItemId && s.active);
-    if (!item) throw new NotFoundException("Store item not found.");
+    const dbItem = await this.prisma.storeItem.findFirst({ where: { id: body.storeItemId, active: true } });
+    if (!dbItem) throw new NotFoundException("Store item not found.");
+    const item = this.toStoreItem(dbItem);
 
     const wallet = await this.ensureWallet(actor.id);
     const amount = item.price * quantity;

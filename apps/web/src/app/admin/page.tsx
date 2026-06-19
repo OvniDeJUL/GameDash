@@ -783,11 +783,30 @@ export default function AdminPage() {
                           </thead>
                           <tbody>
                             {dailyMatchesData.map((m) => {
-                              const winner = m.participants.find((p) => p.outcome === "win");
-                              const loser  = m.participants.find((p) => p.outcome === "loss");
                               const durStr = m.durationSeconds != null
                                 ? `${Math.floor(m.durationSeconds / 60)}m${m.durationSeconds % 60}s`
-                                : "En cours";
+                                : "In progress";
+                              const is3v3 = m.format === "3v3";
+
+                              const renderTeam = (outcome: "win" | "loss") => {
+                                const members = m.participants.filter((p) => p.outcome === outcome);
+                                if (members.length === 0) return null;
+                                const delta = members[0]?.mmrDelta ?? 0;
+                                const color = outcome === "win" ? "var(--green)" : "var(--red)";
+                                const tagClass = outcome === "win" ? "tag-cyan" : "tag-red";
+                                return (
+                                  <span style={{ display: "flex", alignItems: "center", gap: "0.3rem", flexWrap: "wrap" }}>
+                                    {members.map((p, i) => (
+                                      <span key={p.playerId} style={{ color: outcome === "win" ? color : "var(--text-muted)", fontWeight: 600 }}>
+                                        {p.pseudo ?? p.playerId.slice(0, 8)}{i < members.length - 1 ? "," : ""}
+                                      </span>
+                                    ))}
+                                    <span className={`tag ${tagClass}`} style={{ fontSize: "0.68rem" }}>{outcome.toUpperCase()}</span>
+                                    <span style={{ color, fontSize: "0.78rem" }}>{delta > 0 ? "+" : ""}{delta}</span>
+                                  </span>
+                                );
+                              };
+
                               return (
                                 <tr key={m.matchId} style={{ borderTop: "1px solid var(--border)" }}>
                                   <td style={{ padding: "0.7rem 1rem", fontFamily: "monospace", fontSize: "0.78rem", color: "var(--text-muted)" }}>
@@ -797,6 +816,7 @@ export default function AdminPage() {
                                     <span className={`tag ${m.mode === "ranked" ? "tag-cyan" : m.mode === "unranked" ? "tag-purple" : "tag-gold"}`}>
                                       {m.mode}
                                     </span>
+                                    {is3v3 && <span className="tag tag-purple" style={{ marginLeft: "0.25rem", fontSize: "0.68rem" }}>3v3</span>}
                                   </td>
                                   <td style={{ padding: "0.7rem 1rem", color: "var(--text-muted)", fontSize: "0.78rem" }}>
                                     {new Date(m.startedAt).toLocaleTimeString()}
@@ -806,28 +826,12 @@ export default function AdminPage() {
                                   </td>
                                   <td style={{ padding: "0.7rem 1rem" }}>
                                     <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
-                                      {winner && (
-                                        <span style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                                          <span style={{ color: "var(--green)", fontWeight: 600 }}>
-                                            {winner.pseudo ?? winner.playerId.slice(0, 8)}
-                                          </span>
-                                          <span className="tag tag-cyan" style={{ fontSize: "0.68rem" }}>WIN</span>
-                                          <span style={{ color: "var(--green)", fontSize: "0.78rem" }}>+{winner.mmrDelta}</span>
-                                          <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>({winner.mmrBefore}→{winner.mmrAfter})</span>
-                                        </span>
+                                      {renderTeam("win")}
+                                      {m.participants.some((p) => p.outcome === "win") && m.participants.some((p) => p.outcome === "loss") && (
+                                        <span style={{ color: "var(--text-muted)" }}>vs</span>
                                       )}
-                                      {winner && loser && <span style={{ color: "var(--text-muted)" }}>vs</span>}
-                                      {loser && (
-                                        <span style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                                          <span style={{ color: "var(--text-muted)", fontWeight: 600 }}>
-                                            {loser.pseudo ?? loser.playerId.slice(0, 8)}
-                                          </span>
-                                          <span className="tag tag-red" style={{ fontSize: "0.68rem" }}>LOSS</span>
-                                          <span style={{ color: "var(--red)", fontSize: "0.78rem" }}>{loser.mmrDelta}</span>
-                                          <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>({loser.mmrBefore}→{loser.mmrAfter})</span>
-                                        </span>
-                                      )}
-                                      {!winner && !loser && m.participants.map((p) => (
+                                      {renderTeam("loss")}
+                                      {!m.participants.some((p) => p.outcome === "win") && !m.participants.some((p) => p.outcome === "loss") && m.participants.map((p) => (
                                         <span key={p.playerId} style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
                                           {p.pseudo ?? p.playerId.slice(0, 8)} ({p.outcome})
                                         </span>

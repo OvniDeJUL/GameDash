@@ -24,7 +24,7 @@ export class EconomyController {
   ) {}
 
   @Get("store/items")
-  getStoreItems(): StoreItem[] {
+  getStoreItems(): Promise<StoreItem[]> {
     return this.economyService.listStoreItems();
   }
 

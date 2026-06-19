@@ -107,7 +107,19 @@ export default function AccountPage() {
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: "1.25rem" }}>
-                <div className="profile-avatar-lg">{initials}</div>
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt={pseudo || "avatar"}
+                    className="profile-avatar-lg"
+                    style={{ objectFit: "cover", borderRadius: "50%" }}
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.display = "none";
+                      (e.currentTarget.nextElementSibling as HTMLElement | null)?.style.setProperty("display", "flex");
+                    }}
+                  />
+                ) : null}
+                <div className="profile-avatar-lg" style={{ display: avatarUrl ? "none" : "flex" }}>{initials}</div>
                 <div>
                   <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--text-primary)" }}>
                     {pseudo || "—"}
@@ -153,13 +165,41 @@ export default function AccountPage() {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Avatar URL</label>
+                  <label className="form-label">Profile picture (JPG / PNG — max 20 MB)</label>
                   <input
                     className="form-input"
-                    value={avatarUrl}
-                    onChange={(e) => setAvatarUrl(e.target.value)}
-                    placeholder="https://…"
+                    type="file"
+                    accept="image/jpeg,image/png"
+                    style={{ padding: "0.35rem 0.5rem", cursor: "pointer" }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 20 * 1024 * 1024) {
+                        setError("Image too large — max 20 MB.");
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = () => setAvatarUrl(reader.result as string);
+                      reader.readAsDataURL(file);
+                    }}
                   />
+                  {avatarUrl && (
+                    <div style={{ marginTop: "0.5rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                      <img
+                        src={avatarUrl}
+                        alt="preview"
+                        style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover", border: "1px solid var(--border)" }}
+                      />
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{ fontSize: "0.75rem", padding: "0.2rem 0.6rem" }}
+                        onClick={() => setAvatarUrl("")}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="form-group">

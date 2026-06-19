@@ -321,12 +321,32 @@ function MapCard({ map, userId, onUpdate, onOpenDetail }: MapCardProps) {
         />
       )}
       <div style={{ display: "flex", alignItems: "flex-start", gap: "0.875rem" }}>
-        <div className="map-thumb">{getMapIcon(map.tags)}</div>
+        <div className="map-thumb" style={{ padding: 0, overflow: "hidden" }}>
+          {map.screenshots?.[0] ? (
+            <img
+              src={map.screenshots[0]}
+              alt={map.title}
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+            />
+          ) : (
+            getMapIcon(map.tags)
+          )}
+        </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
             <div className="map-card-title">{map.title}</div>
             <span className={`tag ${STATUS_COLORS[map.status] ?? "tag-purple"}`}>{map.status}</span>
             {isOwn && <span className="tag tag-cyan">mine</span>}
+            {isOwn && map.reviewStatus === "pending" && (
+              <span className="tag" style={{ background: "rgba(251,191,36,0.15)", color: "#f59e0b", border: "1px solid rgba(251,191,36,0.3)" }}>
+                ⏳ pending review
+              </span>
+            )}
+            {map.reviewStatus === "featured" && (
+              <span className="tag" style={{ background: "rgba(139,92,246,0.15)", color: "#a78bfa", border: "1px solid rgba(139,92,246,0.3)" }}>
+                ⭐ featured by staff
+              </span>
+            )}
           </div>
           <div className="map-tags" style={{ marginTop: "0.375rem" }}>
             {map.tags.map((tag) => <span key={tag} className="map-tag">{tag}</span>)}

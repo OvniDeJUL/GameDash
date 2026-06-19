@@ -222,7 +222,7 @@ export class AdminService {
     } else if (body.action === "restore") {
       await this.prisma.gameMap.update({ where: { id: mapId }, data: { status: "STABLE", lastModerationAt: new Date() } });
     } else if (body.action === "feature") {
-      await this.prisma.gameMap.update({ where: { id: mapId }, data: { reviewStatus: "featured", lastModerationAt: new Date() } });
+      await this.prisma.gameMap.update({ where: { id: mapId }, data: { status: "STABLE", reviewStatus: "featured", lastModerationAt: new Date() } });
     } else if (body.action === "validate") {
       await this.prisma.gameMap.update({ where: { id: mapId }, data: { status: "STABLE", reviewStatus: "approved", lastModerationAt: new Date() } });
     }
@@ -517,6 +517,7 @@ export class AdminService {
       const participants: AdminMatchParticipantDetail[] = m.participants.map((p) => ({
         playerId: p.userId,
         pseudo: p.user.profile?.pseudo,
+        team: p.team ?? undefined,
         outcome: (p.outcome?.toLowerCase() ?? "draw") as "win" | "loss" | "draw",
         mmrBefore: p.mmrBefore ?? 0,
         mmrAfter: p.mmrAfter ?? 0,
@@ -525,6 +526,7 @@ export class AdminService {
       return {
         matchId: m.id,
         mode: m.mode.toLowerCase() as GameMode,
+        format: m.format === "THREE_VS_THREE" ? "3v3" : "1v1",
         startedAt: m.startedAt.toISOString(),
         finishedAt: m.finishedAt?.toISOString(),
         durationSeconds,

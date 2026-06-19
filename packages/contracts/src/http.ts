@@ -402,6 +402,7 @@ export interface MapSummary {
   tags: string[];
   screenshots: string[];
   status: MapStatus;
+  reviewStatus: string;
   popularityScore: number;
   latestVersionLabel?: string;
   createdAt: string;
@@ -660,6 +661,7 @@ export interface AdminActivePlayerStatus {
 export interface AdminMatchParticipantDetail {
   playerId: string;
   pseudo?: string;
+  team?: number;
   outcome: "win" | "loss" | "draw";
   mmrBefore: number;
   mmrAfter: number;
@@ -669,6 +671,7 @@ export interface AdminMatchParticipantDetail {
 export interface AdminMatchDetail {
   matchId: string;
   mode: GameMode;
+  format: "1v1" | "3v3";
   startedAt: string;
   finishedAt?: string;
   durationSeconds?: number;
